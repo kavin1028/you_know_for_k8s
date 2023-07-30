@@ -1,0 +1,126 @@
+##定义storageclass
+apiVersion: storage.k8s.io/v1                                   //版本号
+kind: StorageClass                                                              //类型为StorageClass
+metadata:                                                                               //定义元数据
+name: nfs-storageclass                                          //storageclass名称
+provisioner: nfs-storage-01                                             //指定使用哪个nfs-client-provisioner
+reclaimPolicy: Retain                                                   //回收策略
+
+------------------------------------------------------
+
+1.编写yaml文件
+# vim test-pvc.yaml 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+ name: test-pvc
+spec:
+  storageClassName: nfs-storageclass                    #指定storageclass的名称
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Mi
+
+2.创建资源
+# kubectl create -f test-pvc.yaml 
+persistentvolumeclaim/test-pvc created
+
+3.查看pv和pvc的状态
+# kg pv,pvc |grep test-pvc
+
+----------------------------------------------------------
+1.编写yaml文件
+# vim nginx-deploy-pvc.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-pv
+spec:
+  replicas: 1
+  selector:            
+    matchLabels:       
+      app: nginx 
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx-pv
+        image: nginx:1.17.1
+        volumeMounts:
+        - name: nginx-data
+          mountPath: /usr/share/nginx
+      volumes:
+      - name: nginx-data
+        persistentVolumeClaim:
+          claimName: test-pvc                   #指定如上pvc
+          readOnly: false
+
+2.创建资源
+# kubectl create -f nginx-deploy.yaml
+
+3.进入容器产生数据
+# kubectl exec -it nginx-pv-56646f947b-twq2m /bin/bash
+root@nginx-pv-56646f947b-twq2m:/# cd /usr/share/nginx/
+root@nginx-pv-56646f947b-twq2m:/usr/share/nginx# for i in {1..10};do echo "this is web${i}" >> index.html; sleep 1;done
+
+4.查看云存储（NFS）上是否有数据产生
+# ll default-test-pvc-pvc-4bd5e8d9-1b38-48a8-a04a-1261eaa0b00f/
+总用量 4
+-rw-r--r-- 1 root root 131 5月  18 14:05 index.html
+
+
+--------------------------------------------------------------
+
+
+# vim nginx-statfuleset.yaml 
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nginx-storage-stat
+spec:
+  replicas: 3
+  serviceName: "nginx"
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.17.1
+        volumeMounts:
+        - name: nginx-storage-test-pvc
+          mountPath: /usr/share/nginx/html
+  volumeClaimTemplates:                                                                 #在statfulset.spec下定义pvc模板，里面的配置参数和pvc的一致
+    - metadata:                                                                         #定义元数据
+        name: nginx-storage-test-pvc                                    #pvc的名称，要与volumeMounts中的名称一致        
+      spec:                                                                                     #定义属性
+        storageClassName: nfs-storageclass                              #指定使用哪个storageclass
+        accessModes:                                                            #访问模式为多主机可读写
+        - ReadWriteMany
+        resources:                                                                      #分配的资源大小
+          requests:
+            storage: 1Gi 
+    
+## 查看是否为每个pod分配了pvc
+# kg pvc |grep nginx-storage-test
+
+## 在每个pod上写入数据验证持久化
+# kubectl exec -it nginx-storage-stat-0 bash
+# echo nginx00000000000 > /usr/share/nginx/html/nginx-storage-stat-0
+
+# kubectl exec -it nginx-storage-stat-1 bash
+# echo nginx11111111111 > /usr/share/nginx/html/nginx-storage-stat-1
+
+# kubectl exec -it nginx-storage-stat-2 bash
+# echo nginx22222222222 > /usr/share/nginx/html/nginx-storage-stat-2
+
+## 验证底层数据是否存在
+
+## 删除StatefulSet验证数据完整性

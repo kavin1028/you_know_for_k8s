@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-hook-exec
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+     app: pod-hook-exec
+  template:
+    metadata:
+      labels:
+        app: pod-hook-exec
+    spec:
+      terminationGracePeriodSeconds: 8 # 设置8秒宽限时间，默认是30s
+      initContainers:
+      - name: init-containers
+        image: busybox
+        command: ["sh","-c","echo init-containers...|tee -a /tmp/pod-hook-exec.log;sleep 5s"]
+        volumeMounts:
+        - name: logs
+          mountPath: /tmp/
+      containers:
+      - name: main-container
+        image: busybox
+        command: ["sh","-c","echo main-container...|tee -a /tmp/pod-hook-exec.log;sleep 3600s"]
+        volumeMounts:
+        - name: logs
+          mountPath: /tmp/
+        startupProbe:
+          exec:
+            command: ["sh","-c","echo startupProbe...|tee -a /tmp/pod-hook-exec.log;sleep 5s"]
+          timeoutSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["sh","-c","echo livenessProbe...|tee -a /tmp/pod-hook-exec.log;sleep 5s"]
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["sh","-c","echo readinessProbe...|tee -a /tmp/pod-hook-exec.log;sleep 5s"]
+          timeoutSeconds: 10
+        lifecycle:
+          postStart:
+            exec: #在容器启动的时候执行一个命令
+              command: ["sh","-c","echo postStart...|tee -a /tmp/pod-hook-exec.log;sleep 5s"]
+          preStop: # 在pod停止之前执行这个命令
+            exec:
+              command: ["sh","-c","echo preStop...|tee -a /tmp/pod-hook-exec.log"]
+      volumes:
+      - name: logs #和上面保持一致 这是本地的文件路径，上面是容器内部的路径
+        hostPath:
+          path: /tmp/logs/
+          type: Directory

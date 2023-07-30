@@ -1,0 +1,441 @@
+下面是一个简单的Pipeline脚本示例：
+
+```groovy
+pipeline{   // 最外层必须由pipeline包裹
+    agent any // agent表示再哪个节点执行
+    stages{
+        stage("build"){
+            steps{ // 具体执行步骤
+                echo "Build..."
+            }
+        }
+        stage("test"){
+            steps{
+                echo "Test..."
+            }
+        }
+        stage("depoly"){
+            steps{
+                echo "Deployment..."
+            }
+        }
+    }
+    post{ // 最后执行
+        success{ // 测试成功时执行（需要安装 Email Extension 插件）
+            emailext body: 'Build succeeded!', subject: 'Build Success', to: 'xx@example.com'
+        }
+        failure{ // 失败时会执行
+            emailext body: 'Build failed!', subject: 'Build Failure', to: 'xx@example.com'
+        }
+    }
+}
+```
+
+在这个示例中，我们使用了三个阶段：`build`、`test` 和 `deploy`。
+
+每个阶段都是一个stage块。在每个阶段中，我们可以使用Jenkins提供的一些API来执行任务，例如sh命令来执行shell脚本或者Jenkins提供的其他插件。
+
+```groovy
+作用域：可用在全局与stage内
+是否必须：是，
+参数：any, none, label, node, docker, dockerfile
+
+参考示例：
+//运行在任意的可用节点上
+agent any
+
+//全局不指定运行节点，由各自stage来决定
+agent none
+
+//运行在指定标签的机器上,具体标签名称由agent配置决定
+agent { label 'master' }
+
+//node参数可以扩展节点信息
+agent { 
+     node {
+         label 'master'
+         customWorkspace 'xxx'
+    } 
+}
+
+//使用指定运行的容器
+pipeline{
+   agent none
+   stages{
+       stage('build Test'){
+              agent {docker 'maven:3-alpine'}
+              steps{
+                   echo "Build Test"
+                   }     
+                }
+       stage('Example Test'){
+              agent {docker 'openjdk:8-jre'}
+              steps{
+                  echo "Exmaple Test"
+                }
+             }
+         }
+}
+```
+
+##### 2.2.3、stages
+
+```groovy
+作用域：全局或者stage阶段内，每个作用域内只能使用一次
+是否必须：全局必须
+参数：无
+
+参考示例：
+pipeline{
+    agent any
+    stages{
+        stage("first stage"){
+            stages{  //嵌套在stage里
+                stage("inside"){
+                    steps{
+                        echo "inside"
+                    }
+                }
+                stage("inside_two"){
+                    steps{
+                        echo "inside_two"
+                    }
+                }
+            }
+        }
+        stage("stage2"){
+            steps{
+                echo "outside"
+            }
+        }
+    }
+}
+```
+
+
+##### 2.2.7、parameters（可选）
+
+- 构建时用户需要提供的参数
+- 这些参数可以通过params提供给流水线的steps使用，有 **字符串** 类型和 **boolean** 类型
+  **string**：字符串类型，`parameters { string(name: ‘DEPLOY_ENV’, defaultValue: ‘staging’, description: ‘’) }`
+  **booleanParam**：布尔参数，`parameters { booleanParam(name: ‘DEBUG_BUILD’, defaultValue: true, description: ‘’) }`
+  **text**：文本参数，包含多行 `parameters { text(name: ‘DEPLOY_TEXT’, defaultValue: ‘One\nTwo\nThree\n’, description: ‘’) }`
+  **choice**：选择类型的参数，`parameters { choice(name: ‘CHOICES’, choices: [‘one’, ‘two’, ‘three’], description: ‘’) }`
+  **password**：password参数，`parameters { password(name: ‘PASSWORD’, defaultValue: ‘SECRET’, description: ‘A secret password’) }`
+
+示例：
+
+```groovy
+pipeline{
+    agent any
+    parameters {
+        string(name: 'P1', defaultValue: 'it is p1', description: 'it is p1')
+        booleanParam(name: 'P2', defaultValue: true, description: 'it is p2')
+    }
+    stages{
+        stage("stage1"){
+            steps{
+                echo "$P1"
+                echo "$P2"
+            }
+        }
+    }
+}
+```
+
+##### 2.2.8、triggers（可选）
+
+自动化触发运行pipeline的方法
+
+示例：每两分钟触发一次job
+
+```groovy
+pipeline{
+    agent any
+    triggers{cron("*/2 * * * *")}
+    stages{
+        stage("Build Test"){
+            steps{
+                echo "hello world"
+            }
+        }
+    }
+}
+```
+
+##### 2.2.9、input（可选）
+
+指令允许 **暂时中断** pipeline执行，等待用户输入，根据用户输入进行下一步动作
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Example') {
+            input {
+                message "Should we continue?"
+                ok "Yes, Do it."
+                submitter "alice,bob"
+                parameters {
+                    string(name: 'PERSON', defaultValue: 'Mr Jenkins', description: 'Who should I say hello to?')
+                }
+            }
+            steps {
+                echo "Hello, ${PERSON}, nice to meet you."
+            }
+        }
+    }
+}
+```
+
+##### 2.2.10、when（可选）
+
+根据when指令的判断结果来决定是否执行后面的阶段
+一个when指令至少包含一个条件，当有多个条件时，所有的子条件必须返回true，这个stage才会运行
+
+**branch**：当正在构建的分支与模式给定的分支匹配时，执行这个阶段, 例如: `when { branch ‘master’ }`。注意，这只适用于多分支流水线。
+**environment**：当指定的环境变量是给定的值时，执行这个步骤, 例如: `when { environment name: ‘DEPLOY_TO’, value: ‘production’ }`
+**expression**：当指定的Groovy表达式评估为true时，执行这个阶段, 例如: `when { expression { return params.DEBUG_BUILD } }`
+**not**：当嵌套条件是错误时，执行这个阶段,必须包含一个条件，例如: `when { not { branch ‘master’ } }`
+**allOf**：当所有的嵌套条件都正确时，执行这个阶段,必须包含至少一个条件，例如: `when { allOf { branch ‘master’; environment name: ‘DEPLOY_TO’, value: ‘production’ } }`
+**anyOf**：当至少有一个嵌套条件为真时，执行这个阶段,必须包含至少一个条件，例如: `when { anyOf { branch ‘master’; branch ‘staging’ } }`
+
+**单条件判断：**
+
+```groovy
+pipeline{
+    agent any
+    parameters{
+        string(name:"deploy_env",defaultValue:"test",description:"")
+    }
+    stages{
+        stage("Build Test"){
+         when{
+            environment name:"deploy_env",value:"prod"
+              }
+        steps{
+            echo "hello wrold"
+        }
+        }   
+    }
+}
+```
+
+build结果：
+
+第一次build时，deploy_env的值是 **test**，stage “Build Test” 被 skipped
+第二次build时，参数deploy_env设置为 **prod**，执行 stage “Build Test”
+
+**多条件判断：**
+
+```groovy
+pipeline{
+    agent any
+    parameters{
+        string(name:"deploy_env",defaultValue:"test",description:"")
+        string(name:"branch",defaultValue:"test",description:"分支")
+    }
+    stages{
+        stage("Build Test"){
+            when{
+                environment name:"branch",value:"master"
+                environment name:"deploy_env",value:"prod"
+            }
+            steps{
+                echo "Hello world"
+            }
+        }
+    }
+}
+```
+
+需满足 branch：master，deploy_env：prod 才会执行流水线。
+
+### 三、Scripted Pipeline（脚本式）流水线
+
+脚本管道和声明管道一样，是建立在底层管道子系统之上的。与Declarative不同，Scripted Pipeline实际上是一个使用Groovy构建的通用DSL。
+
+Groovy语言提供的大多数功能都可供Scripted Pipeline的方式使用，这意味着它可以是一个非常有扩展性和灵活性的工具，可以用来编写连续交付管道。
+
+````groovy
+stage('Build&Tag&Push&Deploy'){
+    //把选择的项目信息转为数组
+    def selectedProjects = "${project_name}".split(',')
+
+    for(int i=0;i<selectedProjects.size();i++){
+        //取出每个项目的名称
+        def currentProjectName = selectedProjects[i];
+        //定义镜像名称
+        def imageName = "${currentProjectName}:${tag}"
+                //定义newTag
+                def newTag = sh(returnStdout: true,script: 'echo `date +"%Y%m%d%H%M%S"_``git describe --tags --always`').trim()
+        //编译，构建本地镜像
+        sh "sed -i 's#ACTIVEPROFILE#${springProfilesActive}#g' Dockerfile"
+        sh "mvn clean package -Dmaven.test.skip=true dockerfile:build"
+        container('docker') {
+            //给镜像打标签
+            sh "docker tag ${imageName} ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+            //登录Harbor，并上传镜像
+            withCredentials([usernamePassword(credentialsId: "${harbor_auth}", passwordVariable: 'password', usernameVariable: 'username')])
+            {
+                //登录
+                sh "docker login -u ${username} -p ${password} ${harbor_url}"
+                //上传镜像
+                sh "docker push ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+            }
+
+        //删除本地镜像
+        sh "docker rmi -f ${imageName}" 
+        sh "docker rmi -f ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+        }
+        def deploy_image_name = "${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+        
+        //基于Helm的方式部署到K8S 
+        container('helm3') {
+            withCredentials([usernamePassword(credentialsId: "${harbor_auth}", passwordVariable: 'password', usernameVariable: 'username')]) {
+            sh """
+                helm repo add --username=${username} --password=${password} aliharborrepo http://harbor-ali-test.xxxx.com:8088/chartrepo/sparkx
+            """
+            }
+            withCredentials([file(credentialsId: 'b8fca5a2-8c91-4456-99aa-071723aae7fe', variable: 'KUBECONFIG')]) {
+            sh """
+                mkdir -p /root/.kube/ && echo $KUBECONFIG >/root/.kube/config
+                echo "Helm应用配置信息确认..."
+                helm upgrade --install --dry-run --debug ${currentProjectName} --namespace devops aliharborrepo/javaAliTest \
+                    --set replicaCount=${replicas} \
+                    --set image.repository=${deploy_image_name} \
+                    --set service.type=ClusterIP \
+                    --set springActive=${springProfilesActive} \
+                    --set ingress.enabled=${isIngress}
+                echo "应用部署..."
+                helm upgrade --install ${currentProjectName} --namespace devops aliharborrepo/javaAliTest \
+                    --set replicaCount=${replicas} \
+                    --set image.repository=${deploy_image_name} \
+                    --set service.type=ClusterIP \
+                    --set springActive=${springProfilesActive} \
+                    --set ingress.enabled=${isIngress}
+                """
+            }
+        }
+    }
+}
+````
+
+### 四、Declarative pipeline和Scripted pipeline的比较
+
+**共同点：**
+
+两者都是pipeline代码的持久实现，都能够使用pipeline内置的插件或者插件提供的steps，两者都可以利用共享库扩展。
+
+**区别：**
+
+两者不同之处在于语法和灵活性。
+
+Declarative pipeline：对用户来说，语法更严格，有固定的组织结构，容易生成代码段，使其成为用户更理想的选择。
+
+Scripted pipeline：更加灵活，因为Groovy本身只能对结构和语法进行限制，对于更复杂的pipeline来说，用户可以根据自己的业务进行灵活的实现和扩展。
+
+ ### 五、优化交付流水线性能
+
+随着交付流水线的复杂度越来越高，需要优化交付流水线的性能成为了一个时刻需要关注的问题。
+
+下面是一些常见的优化策略：
+
+ #### 5.1、并行执行
+
+使用并行执行可以大大缩短交付流水线的执行时间。Pipeline可以很容易地支持并行执行。
+
+例如，我们可以将测试阶段并行执行：
+
+```groovy
+stage('Test') {
+    parallel (
+        "test1" : { sh 'mvn test -Dtest=Test1' },
+        "test2" : { sh 'mvn test -Dtest=Test2' },
+        "test3" : { sh 'mvn test -Dtest=Test3' }
+    )
+}
+```
+
+在这个示例中，我们使用了 **parallel块** 来并行执行。
+
+在parallel块内，我们定义了三个分支来执行测试。分支的名称是任意的，它们将被用作日志输出。每个分支都有自己的命令来执行测试。
+
+ #### 5.2、缓存依赖项
+
+使用缓存可以避免在每个阶段中重新下载依赖项。
+
+例如，如果一个项目使用Maven，我们可以在build阶段前缓存Maven仓库：
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    def mvnHome = tool 'Maven-3.8.2'
+                    env.M2_HOME = mvnHome
+                    sh "${mvnHome}/bin/mvn -B -Dmaven.repo.local=$HOME/.m2/repository clean package"
+                }
+            }
+        }
+    }
+    post {
+        success {
+            cleanWs()
+        }
+    }
+}
+```
+
+在这个示例中，我们使用了Maven插件的tool方法来定义Maven的版本。然后，我们将M2_HOME设置为我们定义的Maven的路径。
+
+最后，我们在Maven命令中使用-Dmaven.repo.local选项来指定Maven仓库的位置。
+
+ #### 5.3、删除不必要的阶段
+
+一些阶段可能不必要并且会大大降低交付流水线的性能。
+
+例如，我们可能只需要在提交代码时执行 `build`和 `test` 阶段，而不是在每次构建时执行这些阶段。
+
+示例：
+
+```groovy
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            when {
+                changeset "src/**"
+            }
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('Test') {
+            when {
+                changeset "src/**"
+            }
+            steps {
+                sh 'mvn test'
+            }
+        }
+        stage('Deploy') {
+            when {
+                changeset "src/**"
+            }
+            steps {
+                sh './deploy.sh'
+            }
+        }
+    }
+    post {
+        success {
+            cleanWs()
+        }
+    }
+}
+```
+
+

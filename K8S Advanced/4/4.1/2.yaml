@@ -1,0 +1,19 @@
+def git_address = "http://gitlab.kubernets.cn/demoteam/java_kubernetes.git" 
+def git_auth = "1cc6009e-fdfc-4b4b-9041-43d7487af929"
+
+//创建一个Pod的模板，label为jenkins-slave
+podTemplate(label: 'jenkins-slave', cloud: 'kubernetes', containers: [ 
+    containerTemplate(
+        name: 'jnlp',
+        image: "harbor-local.kubernets.cn/library/jenkins-slave-maven:v1"
+    )
+  ]
+)
+{
+    //引用jenkins-slave的pod模块来构建Jenkins-Slave的pod 
+    node("jenkins-slave"){
+        stage('拉取代码'){
+            checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[credentialsId: "${git_auth}", url: "${git_address}"]]])
+        }
+    }
+}

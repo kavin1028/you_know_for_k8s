@@ -1,0 +1,24 @@
+## 备份
+kg cm -ningress-nginx ingress-nginx-controller -oyaml >ingress-nginx-controller.yaml
+
+## 配置白名单
+apiVersion: v1
+data:
+  allow-snippet-annotations: "true"
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: ingress-nginx
+    meta.helm.sh/release-namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+    app.kubernetes.io/version: 1.7.0
+    helm.sh/chart: ingress-nginx-4.6.0
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+data:
+  whitelist-source-range: 10.1.10.0/24

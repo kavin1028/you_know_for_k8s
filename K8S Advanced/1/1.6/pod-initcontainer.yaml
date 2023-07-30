@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: php-updated
+spec:
+  containers:
+  - name: php
+    image: php:7-fpm
+    volumeMounts:
+    - name: dir
+      mountPath: /var/www/html/
+  initContainers:
+  - name: install
+    image: busybox
+    volumeMounts:
+    - name: dir
+      mountPath: /var/www/html/
+    command:
+    - wget
+    - "-O"
+    - "/var/www/html/index.php"
+    - https://gitee.com
+  volumes:
+  - name: dir
+    emptyDir: {}

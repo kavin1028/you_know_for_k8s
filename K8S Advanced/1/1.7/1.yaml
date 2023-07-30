@@ -1,0 +1,80 @@
+
+```bash
+kubectl create configmap cm1 --from-literal=server_name=www.xxx.com --from-literal=listen=80
+```
+
+
+```bash
+cat env.txt
+server_name=www.xxx.com
+listen=80
+# 创建
+kubectl create configmap cm2 --from-env-file=env.txt
+```
+
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cm3
+data:
+  server_name: www.xxx.com
+  listen: "80"
+```
+
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+  labels:
+    app: nginx-conf
+data:
+  nginx.conf: |
+    server {
+      server_name www.nginx.com;
+      listen 80;
+      root /home/nginx/www/
+    }
+```
+
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-cm1
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    args: [ "/bin/sh", "-c", "sleep 10000" ]
+    envFrom:  # env方式
+    - configMapRef:
+        name: cm1 # configmap名称
+```
+
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-cm2
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    args: [ "/bin/sh", "-c", "sleep 10000" ]
+    volumeMounts:                               # 用volume挂载方式
+    - name: vol-cm                              # 对应下面的volume名
+      mountPath: "/etc/nginx"                   # 挂载到容器内部的路径
+      readOnly: true                            # 只读
+  volumes:
+  - name: vol-cm                                # 卷名称
+    configMap:
+      name: cm2                                 # configmap的名称
+```
+
+

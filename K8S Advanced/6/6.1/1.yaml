@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: springboot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: springboot
+  template:
+    metadata:
+      labels:
+        app: springboot
+    spec:
+      containers:
+      - name: springboot
+        image: harbor-local.kubernets.cn/demo/springboot:v1
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+        ports:
+          - containerPort: 8080
+            name: web
+        livenessProbe:
+          httpGet:
+            port: web
+            path: /apptwo
+          timeoutSeconds: 2
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: web
+          initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: springboot
+spec:
+  type: ClusterIP
+  selector:
+    app: springboot
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080

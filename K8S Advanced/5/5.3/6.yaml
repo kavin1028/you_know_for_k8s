@@ -1,0 +1,105 @@
+//定义git相关数据
+def git_address = "http://gitlab.kubernets.cn/demoteam/vue_kubernetes.git" 
+def git_auth = "59d88ee6-8c38-4116-948d-66d812799c63"
+
+//构建版本的名称
+def tag = "latest"
+//Harbor私服地址
+def harbor_url = "harbor-local.kubernets.cn"
+//Harbor的项目名称
+def harbor_project_name = "demo"
+//Harbor的凭证
+def harbor_auth = "6d2ada67-9f69-4f79-85e8-c76a0b9e0564"
+//启动时间
+def start = new Date().format('yyyy-MM-dd HH:mm:ss')
+
+
+//创建一个Pod的模板，label为jenkins-slave
+podTemplate(label: 'jenkins-slave-vue', cloud: 'kubernetes', containers: [ 
+    containerTemplate( 
+        name: 'docker',
+        image: "harbor-local.kubernets.cn/library/docker:stable",
+        ttyEnabled: true,
+        command: 'cat'
+        ),
+    ],
+    volumes: [
+        hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
+    ],
+)
+{
+node("jenkins-slave-vue"){
+    // 第一步
+    stage('Pull'){
+        checkout([$class: 'GitSCM', branches: [[name: "${branch}"]], extensions: [], userRemoteConfigs: [[credentialsId: "${git_auth}", url: "${git_address}"]]])
+    }
+
+    stage('BuildDescription') {
+        // 自定义设置构建历史显示的名称和描述信息 
+        // 不同的部署方式设置构建历史显示的名称和描述信息方式不一样，根据自己的部署方式自行百度找到设置方法
+        script {
+        //设置buildName
+          wrap([$class: 'BuildUser']) {
+           //修改Description
+            buildDescription "${BUILD_USER} > ${project_name} > ${branch}"
+           }
+         }
+     }
+
+    // 第二步
+    stage('Build&Tag&Push&Deploy'){
+        //把选择的项目信息转为数组
+        def selectedProjects = "${project_name}".split(',')
+
+        for(int i=0;i<selectedProjects.size();i++){
+            //取出每个项目的名称
+            def currentProjectName = selectedProjects[i];
+
+            //定义镜像名称
+            def imageName = "${currentProjectName}:${tag}"
+                        
+                        //定义newTag
+                        def newTag = sh(returnStdout: true,script: 'echo `date +"%Y%m%d%H%M"_``git describe --tags --always`').trim()
+
+            //编译，构建本地镜像
+            //sh "sed -i 's#ACTIVEPROFILE#${springProfilesActive}#g' Dockerfile"
+            //sh "mvn clean package -Dmaven.test.skip=true"
+            container('docker') {
+
+                //镜像编译
+                sh "docker build -t ${imageName} ."
+
+                //给镜像打标签
+                sh "docker tag ${imageName} ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+
+                //登录Harbor，并上传镜像
+                withCredentials([usernamePassword(credentialsId: "${harbor_auth}", passwordVariable: 'password', usernameVariable: 'username')])
+                {
+                    //登录
+                    sh "docker login -u ${username} -p ${password} ${harbor_url}"
+                    //上传镜像
+                    sh "docker push ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+                }
+
+            //删除本地镜像
+            sh "docker rmi -f ${imageName}" 
+            sh "docker rmi -f ${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+            }
+            def deploy_image_name = "${harbor_url}/${harbor_project_name}/${currentProjectName}:${newTag}"
+            
+            //基于控制器的方式部署到K8S 
+            sh """
+                sed -i 's#\$IMAGE_NAME#${deploy_image_name}#' deployment.yaml
+                sed -i 's#\$APP_NAME#${currentProjectName}#' deployment.yaml
+                sed -i 's#\$APP_REPLICAS#${replicas}#' deployment.yaml
+                sed -i 's#\$NAMESPACE#${namespaces}#' deployment.yaml
+                sed -i 's#\$PODMEMORY#${podsMem}#' deployment.yaml
+                sed -i 's#\$PODCPU#${podsCpu}#' deployment.yaml
+                cat deployment.yaml
+            """
+            //部署到K8S
+            kubernetesDeploy(kubeconfigId: "7ab1d5e8-0f10-4ca7-918a-f505b727c23d", configs: "deployment.yaml")
+        }
+    }
+}
+}

@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    konghq.com/https-redirect-status-code: "301"
+    konghq.com/protocols: http
+    konghq.com/regex-priority: "1000"
+  name: springboot-ing
+spec:
+  ingressClassName: kong
+  rules:
+  - host: python-test.kubernets.cn                                      //改为自己定义的域名
+    http:
+      paths:
+      - backend:
+          service:
+            name: pythondemo
+            port:
+              number: 5000
+        path: /
+        pathType: ImplementationSpecific

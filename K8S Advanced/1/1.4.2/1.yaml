@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:       
+      - name: web
+        image: python
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000  
+        args:
+        - "python"
+        - "-m"
+        - "http.server"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 5  #第一次探测时等待5s
+          periodSeconds: 5  #每5s执行一次
+          failureThreshold: 2 #失败的阈值
+          successThreshold: 1  #成功的阈值
+          timeoutSeconds: 3 #单次执行超时的时间 
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 5  #第一次探测时等待5s
+          periodSeconds: 5  #每5s执行一次
+          failureThreshold: 2 #失败的阈值
+          successThreshold: 1  #成功的阈值
+          timeoutSeconds: 3 #单次执行超时的时间  

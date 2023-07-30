@@ -1,0 +1,205 @@
+## 基于Loki特性的场景变现及优化
+
+
+数据采集数据配置 `/mnt/config/promtail-config.yaml`
+
+```yaml
+server:         #用于提供服务并接收来自其他组件或客户端的请求
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:              #用于配置追踪和同步日志文件读取位置的设置
+  filename:  /tmp/positions.yaml        #指定位置信息存储的文件路径和文件名
+  sync_period: 10s
+
+clients:                #指定与 Loki 服务器进行通信的客户端配置
+  - url: http://loki.kubernets.cn/loki/api/v1/push  #推送的数据接口
+
+scrape_configs:         #用于配置抓取日志的目标和标签的设置。
+- job_name: system
+  static_configs:       #指定静态目标（如主机）的配置列表
+  - targets:
+      - localhost
+    labels:
+      job: varlogs
+      app: varlogs
+      __path__: /var/log/*.log #需要分析的日志目录
+```
+
+容器化Promtail
+
+```shell
+$ docker run -d --name promtail -v /mnt/config/:/mnt/config -v /var/log/:/var/log/ grafana/promtail:latest -config.file=/mnt/config/promtail-config.yaml
+```
+
+针对Loki开启服务暴露，用来支持数据接收
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: logging
+  name: loki-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: loki.kubernets.cn
+    http:
+      paths:
+        - pathType: Prefix
+          backend:
+            service:
+              name: loki
+              port:
+                number: 3100
+          path: /
+```
+
+#### 2.2、测试验证
+
+```bash
+$ curl loki.kubernets.cn/loki/api/v1/label
+{"status":"success","data":["app","component","container","filename","instance","job","namespace","node_name","pod"]}
+```
+
+虚机日志数据：
+
+````bash
+$ ls /var/log/*.log
+boot.log              vmware-network.2.log  vmware-network.5.log  vmware-network.8.log  vmware-vmsvc-root.log
+mysqld.log            vmware-network.3.log  vmware-network.6.log  vmware-network.log    vmware-vmtoolsd-root.log
+vmware-network.1.log  vmware-network.4.log  vmware-network.7.log  vmware-vmsvc.log      yum.log
+````
+
+Grafana测试验证：
+
+```shell
+{job="varlogs",filename="/var/log/mysqld.log"}
+
+{job="varlogs",filename="/var/log/yum.log"}
+```
+
+### 三、使用Promtail收集Java应用日志发送给Loki
+
+场景是一个Spring Boot的Java程序，日志框架使用了Logback。这个程序使用Logback将日志以文件形式写到磁盘上。
+
+ Logback的配置如下:
+
+```XML
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false" scan="false" scanPeriod="30 seconds">
+
+    <contextName>myapp-name</contextName>
+    
+    <property name="logsPath" value="logs" />
+    <timestamp key="currentMonth" datePattern="yyyyMM" />
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+      <file>${logsPath}/${currentMonth}/myapp.log</file>
+      <encoder>
+        <charset>UTF-8</charset>
+        <pattern>
+          <![CDATA[
+          %d{yyyy-MM-dd HH:mm:ss.SSS,+00:00} [%t] ${SPRING_PROFILES_ACTIVE} %p %logger ${CONTEXT_NAME} - %m%n
+          ]]>
+        </pattern>
+      </encoder>
+    </appender>
+
+    <logger name="com.myapp" additivity="false" level="INFO">
+      <appender-ref ref="FILE" />
+    </logger>
+
+    <root level="WARN">
+      <appender-ref ref="FILE" />
+    </root>
+</configuration>
+```
+
+其中`FileAppender`的`encoder.pattern`决定了日志文件中每行日志的格式。处理java应用的日志是需要关注多行日志模式的，即一条日志可能由多行文本组成。例如:
+
+```yaml
+2023-07-18 20:43:20     
+[pool-8-thread-1] dev ERROR com.myapp.ProjectQuery myapp-name - query error
+org.mybatis.spring.MyBatisSystemException: nested exception is org.apache.ibatis.exceptions.TooManyResultsException: Expected one result (or null) to be returned by selectOne(), but found: 2
+        at org.mybatis.spring.MyBatisExceptionTranslator.translateExceptionIfPossible(MyBatisExceptionTranslator.java:77)
+        at org.mybatis.spring.SqlSessionTemplate$SqlSessionInterceptor.invoke(SqlSessionTemplate.java:446)
+        at com.sun.proxy.$Proxy108.selectOne(Unknown Source)
+        at org.mybatis.spring.SqlSessionTemplate.selectOne(SqlSessionTemplate.java:166)
+        at org.apache.ibatis.binding.MapperMethod.execute(MapperMethod.java:83)
+        at org.apache.ibatis.binding.MapperProxy.invoke(MapperProxy.java:59)
+...
+```
+
+针对这个例子，Java应用使用logback将日志按照固定格式落盘，与应用在同一服务器节点上的Promtail将跟踪日志文件，解析日志并将日志发送到Loki。 promtail.yaml配置如下：
+
+```yaml
+server:
+  disable: true
+
+clients:
+- url: http://loki.kubernets.cn/loki/api/v1/push
+  tenant_id: org1
+
+positions:
+  filename: /app/logs/positions.yaml
+
+target_config:
+  sync_period: 10s
+
+scrape_configs:
+- job_name: java_logs
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: java_logs
+      __path__: /app/logs/*/*.log
+  pipeline_stages:
+  - multiline:
+      firstline: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}'
+      max_lines: 256
+      max_wait_time: 5s
+  - regex:
+      expression: '^(?P<time>\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (?P<message>\[(?P<thread>.*?)\] (?P<profileName>[^\s]+) (?P<level>[^\s]+) (?P<logger>[^\s]+) (?P<contextName>[^\s]+) - [\s\S]*)'
+  - labels:
+      contextName:
+      profileName:
+      level:
+  - timestamp:
+      source: time
+      format: '2006-01-02 15:04:05.999'
+      location: "UTC"
+  - drop:
+      older_than: 120h
+      drop_counter_reason: "line_too_old"
+  - labeldrop:
+    - filename
+  -  output:
+      source: message
+```
+
+### 四、生产环境中Loki的优化
+
+#### 4.1、Loki 中保留日志时长
+
+
+```yaml
+limits_config:
+  reject_old_samples: true   # 是否拒绝旧样本
+  reject_old_samples_max_age: 72h   # 72小时之前的样本被拒绝
+
+chunk_store_config:
+  max_look_back_period: 72h  # 为避免查询超过保留期的数据，必须小于或等于下方的时间值
+table_manager:
+  retention_deletes_enabled: true   # 保留删除开启
+  retention_period: 72h  # 超过72h的块数据将被删除
+```
+
+
+```
+limits_config:
+  # 没有该配置添加即可，数值改为自己想要的最大查询行数
+  max_entries_limit_per_query: 9999
+```
+

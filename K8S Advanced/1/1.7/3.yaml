@@ -1,0 +1,55 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    ingress.kubernetes.io/proxy-body-size: "0"
+    ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  labels:
+    app: harbor
+    chart: harbor
+    heritage: Tiller
+    release: xxxx
+  name: xxxx-harbor-ingress
+  namespace: default
+spec:
+  rules:
+  - host: core-harbor.xxxx.com
+    http:
+      paths:
+      - backend:
+          serviceName: xxxx-harbor-portal
+          servicePort: 80
+        path: /
+      - backend:
+          serviceName: xxxx-harbor-core
+          servicePort: 80
+        path: /api/
+      - backend:
+          serviceName: xxxx-harbor-core
+          servicePort: 80
+        path: /service/
+      - backend:
+          serviceName: xxxx-harbor-core
+          servicePort: 80
+        path: /v2/
+      - backend:
+          serviceName: xxxx-harbor-core
+          servicePort: 80
+        path: /chartrepo/
+      - backend:
+          serviceName: xxxx-harbor-core
+          servicePort: 80
+        path: /c/
+  - host: notary-harbor.xxxx.com
+    http:
+      paths:
+      - backend:
+          serviceName: xxxx-harbor-notary-server
+          servicePort: 4443
+        path: /
+  tls:
+  - hosts:
+    - core-harbor.xxxx.com
+    secretName: ingress-secret2023

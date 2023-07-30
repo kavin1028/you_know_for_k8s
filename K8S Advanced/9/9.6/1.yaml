@@ -1,0 +1,572 @@
+
+## 日志收集工具 Fluentd 高级配置（全面）
+
+### 二、source
+
+`source` 主要用于定义 Fluentd 接收数据的来源。Fluentd 标准输入插件包括 http 和 forward：
+
+- http：提供了一个 HTTP 端点来接受传入的 HTTP 消息，
+- forward：提供了一个 TCP 端点来接受 TCP 数据包。
+
+```xml
+<source>
+  @type tail
+  path /var/log/app.log
+  tag app.logs
+  format json
+</source>
+```
+
+
+```xml
+# 在33080端口接受TCP事件
+<source>
+  @type forward
+  port 33080
+</source>
+
+# http://<ip>:33006/myapp.access?json={"event":"data"}
+<source>
+  @type http
+  port 33006
+</source>
+```
+
+
+```xml
+<source>
+  @type tail
+  path /var/log/httpd-access.log
+  pos_file /var/log/td-agent/httpd-access.log.pos
+  tag apache.access
+  <parse>
+    @type apache2
+  </parse>
+</source>
+```
+
+### 三、match
+
+`match` 用于定义 Fluentd 对匹配到的数据进行处理，输出到不同的目标：
+
+```xml
+<match app.logs>
+  @type elasticsearch
+  host localhost
+  port 9200
+</match>
+```
+
+匹配标签为 `app.logs` 的数据流，并将其输出到 Elasticsearch。通过指定 Elasticsearch 的主机和端口，Fluentd 将收集的日志数据发送到 Elasticsearch 进行索引和存储。
+
+```xml
+# 将满足 myapp.acccess 标签的事件全部输出到
+# /var/log/fluent/access.%Y-%m-%d
+<match myapp.access>
+  @type file
+  path /var/log/fluent/access
+</match>
+```
+
+- ......
+
+使用 `out_file` 作为输出目的地插件，`out_file` 输出插件将事件写入文件。当满足 `timekey` 条件时，将创建该文件，要改变输出频率，需要修改 `timekey` 的值，如下所示：
+
+```xml
+<match pattern>
+  @type file
+  path /var/log/fluent/myapp
+  compress gzip
+  <buffer>
+    timekey 1d
+    timekey_use_utc true
+    timekey_wait 10m
+  </buffer>
+</match>
+```
+
+
+使用 filter 可以指定事件的处理流程，多个 filter 可以串联起来使用：
+
+```shell
+Input -> filter 1 -> ... -> filter N -> Output
+```
+
+```xml
+<source>
+  @type http
+  port 9880
+</source>
+
+<filter myapp.access>
+  @type record_transformer
+  <record>
+    host_param "#{Socket.gethostname}"
+  </record>
+</filter>
+
+<match myapp.access>
+  @type file
+  path /var/log/fluent/access
+</match>
+```
+
+```xml
+<filter your_input_tag>
+  @type kubernetes_metadata
+  kubernetes_url 'https://kubernetes.default.svc.cluster.local'
+  include_namespace_id true
+  include_pod_id true
+  include_container_name true
+  include_container_id false
+  include_labels true
+  include_annotations true
+  cache_size 1000
+  cache_ttl 300
+</filter>
+```
+
+
+```xml
+<source>
+  @type system
+  @id input_syslog
+  <parse>
+    @type syslog
+  </parse>
+</source>
+```
+
+```xml
+<source>
+  @type system
+  @id input_syslog
+  log_level info
+</source>
+```
+
+```xml
+<source>
+  @type system
+  @id input_syslog
+  suppress_repeated_stacktrace true
+</source>
+```
+
+3. emit_error_log_interval：设置发出错误日志的时间间隔。当出现错误时，插件会将错误信息写入日志，该选项可以设置两次错误日志之间的最小时间间隔（以秒为单位）。
+```xml
+<source>
+  @type system
+  @id input_syslog
+  emit_error_log_interval 60
+</source>
+```
+
+4. suppress_config_dump：可以选择是否在错误日志中抑制配置信息的输出。当设置为 `true` 时，错误日志将不包含配置信息的详细输出。
+```xml
+<source>
+  @type system
+  @id input_syslog
+  suppress_config_dump true
+</source>
+```
+
+5. without_source：可以选择是否在生成的记录中排除原始日志消息。当设置为 `true` 时，生成的记录将不包含原始的日志消息。
+```xml
+<source>
+  @type system
+  @id input_syslog
+  without_source true
+</source>
+```
+
+6. process_name（仅在 `system` 指令中可用）：在系统级别日志收集时，可以获取生成日志事件的进程的名称，并将其存储在记录字段中。
+```xml
+<source>
+  @type system
+  @id input_syslog
+  process_name_key process_name
+</source>
+```
+
+
+```xml
+<source>
+  @type system
+  @id input_syslog
+  process_name_key process_name
+</source>
+
+<match **>
+  @type stdout
+</match>
+```
+
+
+
+```json
+{
+  "message": "This is a log message",
+  "process_name": "myapp"
+}
+```
+
+
+
+### 七、label
+
+`label` 指令可以对内部路由的过滤器和输出进行分组，`label` 降低了 `tag` 处理的复杂性。`label` 参数是内置插件参数，因此需要 `@` 前缀。
+
+例如下面的配置示例：
+
+```xml
+<source>
+  @type forward
+</source>
+
+<source>
+  @type tail
+  @label @SYSTEM
+</source>
+
+<filter access.**>
+  @type record_transformer
+  <record>
+    # ...
+  </record>
+</filter>
+
+<match **>
+  @type elasticsearch
+  # ...
+</match>
+
+<label @SYSTEM>
+  <filter var.log.middleware.**>
+    @type grep
+    # ...
+  </filter>
+  <match **>
+    @type s3
+    # ...
+  </match>
+</label>
+```
+
+
+```shell
+# 包含 ./config.d 目录中的所有配置文件
+@include config.d/*.conf
+```
+
+`@include` 指令支持常规文件路径、glob 模式和 http URL 约定：
+
+```shell
+## 路径可以是一个具体的文件名，也可以是一个匹配模式，以批量包含多个文件。
+
+# 绝对路径
+@include /path/to/config.conf
+
+# 如果使用相对路径，指令将使用此配置文件的目录名来扩展路径
+@include extra.conf
+
+# glob 匹配模式
+@include config.d/*.conf
+
+# http
+@include http://example.com/fluent.conf
+```
+
+```xml
+<source>
+  @type tail
+  path /path/to/apache.log
+  tag apache.access
+  <parse>
+    @type apache2
+  </parse>
+</source>
+```
+
+
+```json
+Started GET "/users/123/" for 127.0.0.1 at 2023-07-12 12:00:11 +0900
+Processing by UsersController#show as HTML
+  Parameters: {"user_id"=>"123"}
+  Rendered users/show.html.erb within layouts/application (0.3ms)
+Completed 200 OK in 4ms (Views: 3.2ms | ActiveRecord: 0.0ms)
+```
+
+我们可以添加如下所示的配置来进行解析：
+
+```xml
+<parse>
+  @type multiline
+  format_firstline /^Started/
+  format1 /Started (?<method>[^ ]+) "(?<path>[^"]+)" for (?<host>[^ ]+) at (?<time>[^ ]+ [^ ]+ [^ ]+)\n/
+  format2 /Processing by (?<controller>[^\u0023]+)\u0023(?<controller_method>[^ ]+) as (?<format>[^ ]+?)\n/
+  format3 /(  Parameters: (?<parameters>[^ ]+)\n)?/
+  format4 /  Rendered (?<template>[^ ]+) within (?<layout>.+) \([\d\.]+ms\)\n/
+  format5 /Completed (?<code>[^ ]+) [^ ]+ in (?<runtime>[\d\.]+)ms \(Views: (?<view_runtime>[\d\.]+)ms \| ActiveRecord: (?<ar_runtime>[\d\.]+)ms\)/
+</parse>
+```
+
+其中的 `format_firstline /^Started/` 用来指定第一行日志的匹配规则，`formatN` 指定后面几行的匹配规则，最后可以解析成如下所示的结果：
+
+```shell
+time:
+1371178811 (2013-06-14 12:00:11 +0900)
+
+record:
+{
+  "method"           :"GET",
+  "path"             :"/users/123/",
+  "host"             :"127.0.0.1",
+  "controller"       :"UsersController",
+  "controller_method":"show",
+  "format"           :"HTML",
+  "parameters"       :"{ \"user_id\":\"123\"}",
+  ...
+}
+```
+
+同样有如下所示的 JAVA 日志事件：
+
+```shell
+2023-07-03 14:27:33 [main] INFO  Main - Start
+2023-07-03 14:27:33 [main] ERROR Main - Exception
+javax.management.RuntimeErrorException: null
+    at Main.main(Main.java:16) ~[bin/:na]
+2023-07-03 14:27:33 [main] INFO  Main - End
+```
+
+我们可以使用下面的配置来解析：
+
+```xml
+<parse>
+  @type multiline
+  format_firstline /\d{4}-\d{1,2}-\d{1,2}/
+  format1 /^(?<time>\d{4}-\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}) \[(?<thread>.*)\] (?<level>[^\s]+)(?<message>.*)/
+</parse>
+```
+
+这样就可以解析成如下所示的结果了：
+
+```shell
+time:
+2013-03-03 14:27:33 +0900
+record:
+{
+  "thread" :"main",
+  "level"  :"INFO",
+  "message":"  Main - Start"
+}
+
+time:
+2013-03-03 14:27:33 +0900
+record:
+{
+  "thread" :"main",
+  "level"  :"ERROR",
+  "message":" Main - Exception\njavax.management.RuntimeErrorException: null\n    at Main.main(Main.java:16) ~[bin/:na]"
+}
+
+time:
+2013-03-03 14:27:33 +0900
+record:
+{
+  "thread" :"main",
+  "level"  :"INFO",
+  "message":"  Main - End"
+}
+```
+
+### 九、模式匹配
+
+
+```xml
+<match "app.#{ENV['FLUENTD_TAG']}">
+  @type stdout
+</match>
+```
+
+
+```xml
+# ** 匹配所有的 tags. Bad :(
+<match **>
+  @type blackhole_plugin
+</match>
+
+<match myapp.access>
+  @type file
+  path /var/log/fluent/access
+</match>
+```
+
+正确的写发应该是将确定的tag尽量写在前面，模糊匹配的写在后面。
+
+```xml
+<match myapp.access>
+  @type file
+  path /var/log/fluent/access
+</match>
+
+# Capture all unmatched tags. Good :)
+<match **>
+  @type blackhole_plugin
+</match>
+```
+
+
+fluentd的配置文件如下：
+
+```xml
+<source>
+  @type tail
+  path /root/my.txt
+  pos_file /root/my.txt.pos
+  tag mylog
+  <parse>
+    @type regexp
+    expression /(?<key>\w+)\s(?<value>\w+)/
+  </parse>
+</source>
+
+<match mylog>
+  @type http
+  endpoint http://localhost:9090/
+  open_timeout 2
+  http_method post
+
+  <format>
+    @type json
+  </format>
+  <buffer>
+    flush_interval 3s
+  </buffer>
+</match>
+```
+
+#### 场景二
+
+- 读取指定路径（可以是环境变量或默认路径）的日志文件，不对源数据进行解析，然后向每条记录中添加主机名信息，并将处理后的数据输出到标准输出。
+
+```xml
+<source>
+  @type tail
+  # 这里使用HISTFILE环境变量，如果没有设置，使用默认值/root/.bash_history
+  path "#{ENV["HISTFILE"] || /root/.bash_history}"
+  pos_file /root/.bash_history.pos
+  tag history
+  <parse>
+    @type none
+  </parse>
+</source>
+
+<filter history>
+  @type record_transformer
+  <record>
+    hostname ${hostname}
+  </record>
+</filter>
+
+<match history>
+  @type stdout
+</match>
+```
+
+#### 场景三
+
+- 收集用户操作记录转发到另一个fluentd节点，同时将数据发送到Kafka和存入HDFS。
+
+- 数据流为：fluentd采集端 -> fluentd收集端 -> kafka和HDFS
+
+- 示例用户操作记录数据为：
+
+```xml
+root pts/1 2023-06-26 10:59 (10.180.206.1):root 2023-06-26 11:00:09 130  tail -f /var/log/command.his.log
+```
+
+采集节点的配置：
+
+```xml
+<source>
+  @type tail
+  path /var/log/command.his.log
+  pos_file /var/log/command.his.log.pos
+  tag history
+  <parse>
+    @type regexp
+    # 使用正则解析日志文件
+    expression /^(?<who_user>\w+)\s(?<pts>\S+)\s(?<who_time>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})\s\((?<remote_ip>\d+\.\d+\.\d+\.\d+)\):(?<user>\w+)\s(?<time>\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\s(?<res>\d+)\s(?<command>.+)$/
+    time_key time
+  </parse>
+</source>
+<filter history>
+  @type record_transformer
+  <record>
+    # event内容增加hostname这一行
+    hostname ${hostname}
+  </record>
+</filter>
+
+<match history>
+  @type forward
+  send_timeout 60s
+  recover_wait 10s
+  hard_timeout 60s
+  <buffer>
+    # 1秒钟向另一个fluentd节点转发一次
+    flush_interval 1s
+  </buffer>
+  <server>
+    name myserver1
+    host 10.180.xxx.xxx
+    port 24225
+    weight 60
+  </server>
+</match>
+```
+
+fluentd收集节点的配置：
+
+```xml
+<source>
+  @type forward
+  port 24225
+  bind 0.0.0.0
+  tag remote
+</source>
+
+<match remote>
+  # 使用copy方式，分两路输出
+  @type copy
+  <store>
+    @type kafka2
+    brokers 10.180.xxx.xxx:9092
+    use_event_time true
+
+    <buffer topic>
+        @type file
+        path /var/log/td-agent/buffer/td
+        flush_interval 3s
+    </buffer>
+
+    <format>
+        @type json
+    </format>
+
+    default_topic history
+    required_acks -1
+  </store>
+  <store>
+    @type webhdfs
+    host 10.180.xxx.xxx
+    port 50070
+    path "/history/access.log.%Y%m%d_%H.#{Socket.gethostname}.log"
+    <buffer>
+        flush_interval 60s
+    </buffer>
+  </store>
+</match>
+```

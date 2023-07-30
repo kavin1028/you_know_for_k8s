@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: java-ingress-nginx
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rate: 100K
+    nginx.ingress.kubernetes.io/limit-whitelist: 10.1.10.100
+    nginx.ingress.kubernetes.io/limit-rps: "1"
+    nginx.ingress.kubernetes.io/limit-rpm: "30"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: java.kubernets.cn
+      http:
+        paths:
+          - pathType: Prefix
+            backend:
+              service:
+                name: springboot
+                port:
+                  number: 8080
+            path: /

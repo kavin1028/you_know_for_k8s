@@ -1,0 +1,38 @@
+# fluentd-configmap.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: fluentd-conf
+  namespace: logging
+data:
+  ......
+  output.conf: |-
+    <match **>
+      @id kafka
+      @type kafka2
+      @log_level info
+
+      # list of seed brokers
+      brokers kafka-0.kafka-headless.logging.svc.cluster.local:9092
+      use_event_time true
+
+      # topic settings
+      topic_key k8slog
+      default_topic messages  # 注意，kafka中消费使用的是这个topic
+      # buffer settings
+      <buffer k8slog>
+        @type file
+        path /var/log/td-agent/buffer/td
+        flush_interval 3s
+      </buffer>
+
+      # data type settings
+      <format>
+        @type json
+      </format>
+
+      # producer settings
+      required_acks -1
+      compression_codec gzip
+
+    </match>

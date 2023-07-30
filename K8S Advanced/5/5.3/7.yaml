@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: $APP_NAME
+  namespace: $NAMESPACE
+spec:
+  type: ClusterIP 
+  selector:
+    app: $APP_NAME
+  ports:
+  - name: http
+    port: 5000
+    protocol: TCP 
+    targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: $APP_NAME
+  namespace: $NAMESPACE
+spec:
+  replicas: $APP_REPLICAS
+  selector:
+    matchLabels:
+      app: $APP_NAME
+  template:
+    metadata:
+      labels:
+        app: $APP_NAME
+    spec:
+      containers:
+      - name: $APP_NAME
+        image: $IMAGE_NAME
+        resources:
+          limits:
+            memory: $PODMEMORYGi
+            cpu: $PODCPUm
+          requests:
+            memory: $PODMEMORYGi
+            cpu: $PODCPUm
+        ports:
+          - containerPort: 5000
+            name: web
+        livenessProbe:
+          httpGet:
+            port: web
+            path: /
+          timeoutSeconds: 2       # 表示容器必须在2s内做出相应反馈给probe，否则视为探测失败
+          periodSeconds: 30       # 探测周期，每30s探测一次
+        readinessProbe:
+          tcpSocket:
+            port: web
+          initialDelaySeconds: 10 # 容器启动后10s开始探测

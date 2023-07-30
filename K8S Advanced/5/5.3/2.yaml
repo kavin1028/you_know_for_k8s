@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: $APP_NAME
+  namespace: $NAMESPACE
+spec:
+  ports:
+    - name: web
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: $APP_NAME
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: $APP_NAME
+  namespace: $NAMESPACE
+spec:
+  progressDeadlineSeconds: 600
+  replicas: $APP_REPLICAS
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: $APP_NAME
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: $APP_NAME
+    spec:
+      imagePullSecrets:
+        - name: harborsecret
+      containers:
+      - env:
+        - name: spring.profiles.active
+          value: $SPRINGENV
+        image: $IMAGE_NAME
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - curl
+              - -X
+              - POST
+              - 127.0.0.1:8080/actuator/shutdown
+        resources:
+          limits:
+            memory: $PODMEMORYGi
+            cpu: $PODCPUm
+          requests:
+            memory: $PODMEMORYGi
+            cpu: $PODCPUm
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /apptwo
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: $APP_NAME
+        ports:
+          - containerPort: 8080
+            name: web
+            protocol: TCP
+        readinessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /apptwo
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 40
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 2
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 70

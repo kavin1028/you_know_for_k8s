@@ -1,0 +1,22 @@
+[root@master1 /tmp/springdemo]# ls
+Dockerfile  pom.xml  src  target
+[root@master1 /tmp/springdemo]# ls target/
+classes  generated-sources  maven-archiver  maven-status  springdemo2023.jar  springdemo2023.jar.original
+
+[root@master1 /tmp/springdemo]# cat Dockerfile
+FROM openjdk:8-jdk
+ADD ./target/springdemo2023.jar /opt/app.jar
+EXPOSE 8080
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo 'Asia/Shanghai' > /etc/timezone
+WORKDIR /opt
+CMD ["java","-jar","app.jar"]
+
+[root@master1 /tmp/springdemo]# docker build -t springboot:v2 .
+Sending build context to Docker daemon   17.7MB
+...编译部分省略
+Successfully tagged springboot:v2
+
+[root@master1 /tmp/springdemo]# docker run -d -p 8080:8080 springboot:v2
+
+[root@master1 /tmp/springdemo]# curl localhost:8080/appone
+appOne

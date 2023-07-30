@@ -1,0 +1,12 @@
+<securityRealm class="org.jenkinsci.plugins.GitLabSecurityRealm">
+    <gitlabWebUri>http://xxxxxx.cn</gitlabWebUri>
+    <gitlabApiUri>http://xxxxxx.cn</gitlabApiUri>
+    <clientID>6841a6932bdca3846d4375a36a3d182081d681e750494718b56590f653e6f351</clientID>
+    <clientSecret>{AQAAABAAAABQeSsOX2Et0rq8SKcG+PJJKy3MALz7sTmpxeEfCspErVIMZ3OyqhGLRBipi+FDwHakzz9lxU9KIlKaYojh6qUh0TND0/UrnqVDEcWvIbOB8GxKDxeUhLpKhvSq6BL54kMP}</clientSecret>
+</securityRealm>
+
+
+<securityRealm class="hudson.security.HudsonPrivateSecurityRealm">
+    <disableSignup>true</disableSignup>
+    <enableCaptcha>false</enableCaptcha>
+</securityRealm>

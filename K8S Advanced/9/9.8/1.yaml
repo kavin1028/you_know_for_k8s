@@ -1,0 +1,342 @@
+
+## K8S轻量级日志收集方案LPG（Loki+Promtail+Grafana）
+
+### 一、EFK vs LPG
+
+添加 Loki 的 Chart 仓库：
+
+```shell
+$ helm repo add grafana https://grafana.github.io/helm-charts
+$ helm repo update
+```
+
+获取 `loki-stack` 的 Chart 包并解压：
+
+```shell
+$ helm search repo loki
+$ helm pull grafana/loki-stack --untar --version 2.9.10
+```
+
+修改所需的 `values.yaml`
+
+```yaml
+test_pod:
+  enabled: true
+  image: bats/bats:1.8.2
+  pullPolicy: IfNotPresent
+...
+
+loki:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClassName: nfs-storage
+    accessModes:
+      - ReadWriteOnce
+    size: 30Gi
+  isDefault: true
+  url: http://{{(include "loki.serviceName" .)}}:{{ .Values.loki.service.port }}
+...
+
+promtail:
+  enabled: true
+  config:
+    logLevel: info
+    serverPort: 3101
+    clients:
+      - url: http://{{ .Release.Name }}:3100/loki/api/v1/push
+    limits_config:
+      ingestion_rate_strategy: local
+      ingestion_rate_mb: 15
+      ingestion_burst_size_mb: 20  
+...
+
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClassName: nfs-storage
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+```
+
+#### 3.2、部署验证
+
+```shell
+$ kubectl create ns logging
+$ helm upgrade --install loki -n logging -f values.yaml . 
+```
+
+查看验证：
+
+```shell
+$ kubectl get pods -n logging |grep loki
+$ kubectl -n logging get svc |grep loki
+```
+
+获取grafana的密码：
+
+```shell
+$ kubectl get secret --namespace logging loki-grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+```
+
+创建ing：
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: logging
+  name: grafana-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana-logging.kubernets.cn
+    http:
+      paths:
+        - pathType: Prefix
+          backend:
+            service:
+              name: loki-grafana
+              port:
+                number: 80
+          path: /
+```
+
+测试验证：
+
+```shell
+$ curl grafana-logging.kubernets.cn -i
+```
+
+
+```yaml
+$ kubectl get secret loki-promtail -n logging -o json | jq -r '.data."promtail.yaml"' | base64 --decode
+server:
+  log_level: info
+  http_listen_port: 3101
+
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+positions:
+  filename: /run/promtail/positions.yaml
+
+scrape_configs:
+  # See also https://github.com/grafana/loki/blob/master/production/ksonnet/promtail/scrape_config.libsonnet for reference
+  - job_name: kubernetes-pods
+    pipeline_stages:
+      - cri: {}
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels:
+          - __meta_kubernetes_pod_controller_name
+        regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
+        action: replace
+        target_label: __tmp_controller_name
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_name
+          - __meta_kubernetes_pod_label_app
+          - __tmp_controller_name
+          - __meta_kubernetes_pod_name
+        regex: ^;*([^;]+)(;.*)?$
+        action: replace
+        target_label: app
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_instance
+          - __meta_kubernetes_pod_label_release
+        regex: ^;*([^;]+)(;.*)?$
+        action: replace
+        target_label: instance
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_component
+          - __meta_kubernetes_pod_label_component
+        regex: ^;*([^;]+)(;.*)?$
+        action: replace
+        target_label: component
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_node_name
+        target_label: node_name
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_namespace
+        target_label: namespace
+      - action: replace
+        replacement: $1
+        separator: /
+        source_labels:
+        - namespace
+        - app
+        target_label: job
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_name
+        target_label: pod
+      - action: replace
+        source_labels:
+        - __meta_kubernetes_pod_container_name
+        target_label: container
+      - action: replace
+        replacement: /var/log/pods/*$1/*.log
+        separator: /
+        source_labels:
+        - __meta_kubernetes_pod_uid
+        - __meta_kubernetes_pod_container_name
+        target_label: __path__
+      - action: replace
+        regex: true/(.*)
+        replacement: /var/log/pods/*$1/*.log
+        separator: /
+        source_labels:
+        - __meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash
+        - __meta_kubernetes_pod_annotation_kubernetes_io_config_hash
+        - __meta_kubernetes_pod_container_name
+        target_label: __path__
+```
+
+### 四、Loki 查询案例
+
+#### 4.1、日志选择器
+
+```shell
+对于查询表达式的标签部分，将其用大括号括起来{}，然后使用键值语法选择标签。多个标签表达式用逗号分隔：
+
+= 完全相等。
+!= 不相等。
+=~ 正则表达式匹配。
+!~ 不进行正则表达式匹配。
+
+# 根据任务名称来查找日志
+{app="ingress-nginx"}
+{job="devops/metallb"}
+{namespace="default",app="podstdr2"}
+{app=~"kube-state-metrics|prometheus|zookeeper"}
+```
+
+#### 4.2、使用日志过滤器来查找
+
+```shell
+编写日志流选择器后，您可以通过编写搜索表达式来进一步过滤结果
+
+|= 行包含字符串
+!= 行不包含字符串。
+|~ 行匹配正则表达式。
+!~ 行与正则表达式不匹配。
+
+regex表达式接受RE2语法。默认情况下，匹配项区分大小写，并且可以将regex切换为不区分大小写的前缀(?i)。
+
+1. 精确查找名称空间为logging下container为zookeeper且包含有INFO关键字的日志
+{namespace="logging",container="zookeeper"} |= "INFO"
+
+2. 正则查找
+{job="huohua/svc-huohua-batch"} |~ "(duration|latency)s*(=|is|of)s*[d.]+"
+
+3. 不包含。
+{job="mysql"} |= "error" != "timeout"
+```
+
+### 五、常见问题
+
+#### 5.1、问题(1)
+
+提示找不到**/var/log/pods**目录下的日志文件，无法tail。
+
+```shell
+level=error ts=2023-07-17T03:22:11.682802445Z caller=filetarget.go:307 msg="failed to tail file, stat failed" error="stat /var/log/pods/kube-system_kube-apiserver-master3_a8daf137c2a2ea7ef925aaef1e82ac16/kube-apiserver/13.log: no such file or directory" filename=/var/log/pods/kube-system_kube-apiserver-master3_a8daf137c2a2ea7ef925aaef1e82ac16/kube-apiserver/13.log
+level=error ts=2023-07-17T03:22:11.682823944Z caller=filetarget.go:307 msg="failed to tail file, stat failed" error="stat /var/log/pods/kube-system_kube-scheduler-master3_bdef86673f60f833d12eb8a3ad337fac/kube-scheduler/1.log: no such file or directory" filename=/var/log/pods/kube-system_kube-scheduler-master3_bdef86673f60f833d12eb8a3ad337fac/kube-scheduler/1.log
+```
+
+```
+{
+    "name": "docker",
+    "hostPath": {
+        "path": "/var/lib/docker/containers",
+        "type": ""
+    }
+},
+    {
+    "name": "pods",
+    "hostPath": {
+        "path": "/var/log/pods",
+        "type": ""
+    }
+}
+```
+
+但是我们这边真实的企业场景是将docker的数据目录挂载磁盘**/data**目录下，所以需要修改默认volumes配置。
+
+修改步骤：
+
+```shell
+$ vim values.yaml
+```
+
+```yaml
+promtail:
+  enabled: true
+  extraVolumes:
+    - name: docker
+      hostPath:
+        path: /data/docker/containers
+  extraVolumeMounts:
+    - name: docker
+      mountPath: /data/docker/containers
+      readOnly: true
+  config:
+    logLevel: info
+    serverPort: 3101
+    clients:
+      - url: http://{{ .Release.Name }}:3100/loki/api/v1/push
+```
+
+
+
+```cobol
+[root@node1 log]# ll /var/log/pods/monitoring_promtail-bs5cs_5bc5bc90-bac9-480d-b291-4caadeff2236/promtail/
+total 4
+lrwxrwxrwx 1 root root 162 Dec 17 14:04 0.log -> /data/docker/containers/db45d5118e9508817e1a2efa3c9da68cfe969a2b0a3ed42619ff61a29cc64e5f/db45d5118e9508817e1a2efa3c9da68cfe969a2b0a3ed42619ff61a29cc64e5f-json.log
+```
+
+#### 5.2、问题(2)
+
+Loki日志系统收集日志报429错误：
+
+```shell
+level=warn ts=2023-07-17T03:42:34.456086325Z caller=client.go:369 component=client host=loki:3100 msg="error sending batch, will retry" status=429 error="server returned HTTP status 429 Too Many Requests (429): Ingestion rate limit exceeded for user fake (limit: 4194304 bytes/sec) while attempting to ingest '5381' lines totaling '1048504' bytes, reduce log volume or contact your Loki administrator to see if the limit can be increased"
+level=warn ts=2023-07-17T03:42:35.144739805Z caller=client.go:369 component=client host=loki:3100 msg="error sending batch, will retry" status=429 error="server returned HTTP status 429 Too Many Requests (429): Ingestion rate limit exceeded for user fake (limit: 4194304 bytes/sec) while attempting to ingest '5381' lines totaling '1048504' bytes, reduce log volume or contact your Loki administrator to see if the limit can be increased"
+```
+
+收集的日志太多了，超过了 loki 的限制，所以会报 429 错误，如果你要增加限制可以修改 loki 的配置文件：
+
+```yaml
+promtail:
+  enabled: true
+  extraVolumes:
+    - name: docker
+      hostPath:
+        path: /data/docker/containers
+  extraVolumeMounts:
+    - name: docker
+      mountPath: /data/docker/containers
+      readOnly: true
+  config:
+    logLevel: info
+    serverPort: 3101
+    clients:
+      - url: http://{{ .Release.Name }}:3100/loki/api/v1/push
+    limits_config:
+      # 将直接将日志数据发送到运行在本地的 Loki 实例
+      ingestion_rate_strategy: local
+      # 每个用户每秒的采样率限制
+      ingestion_rate_mb: 15
+      # 每个用户允许的采样突发大小
+      ingestion_burst_size_mb: 20
+```
+
+
+
+

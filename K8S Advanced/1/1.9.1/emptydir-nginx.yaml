@@ -1,0 +1,29 @@
+# cat emptydir-nginx.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-nginx
+spec:
+  containers:
+  - name: emptydir-nginx
+    image: nginx
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+    - mountPath: /data/      #添加容器内部的挂载点
+      name: emptydir-name
+  volumes:
+  - name: emptydir-name
+    emptyDir:            #创建一个空目录
+      sizeLimit: 1G         #目录容量大小为1G
+
+## 进入容器并在容器中创建文件测试
+kubectl exec -it emptydir-nginx /bin/bash
+
+echo $(date +%Y%m%d-%H:%M:%S) >> /data/time.log
+
+## 在对应的node节点上查找临时存储的文件位置
+find / -name "emptydir-nginx"
+
+## 查看并验证文件内容
+## 在master节点上删除pod后，再次验证数据是否存在
+cat: time.log: No such file or directory

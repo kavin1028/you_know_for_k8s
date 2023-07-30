@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    # 解决: 413 Request Entity Too Large
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+
+    # 解决：后端大文件上传问题
+    nginx.ingress.kubernetes.io/client-body-buffer-size: 50m
+    nginx.ingress.kubernetes.io/proxy-max-temp-file-size: 100m
+
+    # 解决: 上传文件较慢问题
+    nginx.ingress.kubernetes.io/proxy-buffer-size: 50m
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+
+    # 解决: 与后端backend超时问题
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: 300s
+    nginx.ingress.kubernetes.io/proxy-read-timeout: 180s
+    nginx.ingress.kubernetes.io/proxy-send-timeout: 180s
+
+    # 解决: 处理Nginx代理转发与后端服务文件上传缓存区设置(原生命令)
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~ /fastfile {
+        client_max_body_size 1024m;   # 允许客户端请求的最大单文件字节数，人话：能上传多大文件
+        client_body_buffer_size 10m;  # 缓冲区代理缓冲用户端请求的最大字节数，人话：一次能接受多少文件，建议根据带宽上限设置，减少磁盘读写，加快速度
+        proxy_connect_timeout 300;    # Nginx与后端代理连接超时时间
+        proxy_read_timeout 300;       # 后端服务器响应时间(代理接收超时)时间
+        proxy_buffer_size 1024k;      # 设置代理服务器（nginx）保存用户头信息的缓冲区大小
+        proxy_buffers 6 500k;             # proxy_buffers缓冲区，网页平均在32k以下的话>，这样设置
+        proxy_busy_buffers_size 1024k;    # 高负荷下缓冲大小（proxy_buffers*2）
+        proxy_temp_file_write_size 1024k; # 设定缓存文件夹大小，大于这个值将从upstream服务器传输
+      }

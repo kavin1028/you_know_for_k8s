@@ -1,0 +1,38 @@
+# cat deployment.yaml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pythondemo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pythondemo
+  template:
+    metadata:
+      labels:
+        app: pythondemo
+    spec:
+      containers:
+      - name: pythondemo
+        image: harbor-local.kubernets.cn/demo/python:v2
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+          requests:
+            memory: "1Gi"
+            cpu: "500m" 
+        ports:
+          - containerPort: 5000
+            name: web
+        livenessProbe:
+          httpGet:
+            port: web
+            path: /
+          timeoutSeconds: 2       # 表示容器必须在2s内做出相应反馈给probe，否则视为探测失败
+          periodSeconds: 30       # 探测周期，每30s探测一次
+        readinessProbe:
+          tcpSocket:
+            port: web
+          initialDelaySeconds: 10 # 容器启动后10s开始探测

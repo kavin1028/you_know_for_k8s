@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-blue-deployment
+  labels:
+    app: nginx-blue
+spec:
+  replicas: 4
+  revisionHistoryLimit: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  selector:
+    matchLabels:
+      app: nginx-blue
+  template:
+    metadata:
+      labels:
+        app: nginx-blue
+    spec:
+      containers:
+      - name: nginx-blue
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80

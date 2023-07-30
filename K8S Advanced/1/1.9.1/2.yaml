@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: producer-consumer
+spec:
+  containers:
+    - name: producer
+      image: busybox
+      volumeMounts:
+      - name: shared-volume
+        mountPath: /producer_dir
+      command: [ "/bin/sh", "-c" ]
+      args:
+      - while true; do
+          echo $(hostname) $(date) >> /producer_dir/hello;
+          sleep 5;
+        done
+    - name: consumer
+      image: busybox
+      volumeMounts:
+      - name: shared-volume
+        mountPath: /consumer_dir
+      args:
+      - /bin/sh
+      - -c
+      - cat  /consumer_dir/hello ; sleep 3600
+  volumes:
+  - name: shared-volume
+    emptyDir: {}
+
+## 测试验证
+## kubectl exec -it producer-consumer -c producer /bin/sh
+#/ # tail -f  /producer_dir/hello
+#
+## kubectl exec -it producer-consumer -c consumer /bin/sh
+#/ # tail -f /consumer_dir/hello

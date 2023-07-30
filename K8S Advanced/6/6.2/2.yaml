@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: java-ingress-nginx
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/whitelist-source-range: 192.168.0.100
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: java.kubernets.cn
+      http:
+        paths:
+          - pathType: Prefix
+            backend:
+              service:
+                name: springboot
+                port:
+                  number: 8080
+            path: /

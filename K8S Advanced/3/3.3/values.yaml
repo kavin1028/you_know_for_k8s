@@ -1,0 +1,39 @@
+# WordPress相关配置
+wordpressUsername: admin
+wordpressPassword: password
+wordpressEmail: admin@example.com
+wordpressBlogName: My 123Blog
+
+# Service相关配置
+service:
+  type: NodePort
+  port: 80
+  nodePorts:
+    http: "32088"
+
+# MySQL相关配置
+mysql:
+  image:
+    repository: bitnami/mysql
+    tag: 8.0.26-debian-10-r0
+    pullPolicy: IfNotPresent
+  user: wordpress
+  database: wordpress
+  port: 3306
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: "alibabacloud-cnfs-nas"
+
+# WordPress相关配置
+wordpress:
+  image:
+    repository: bitnami/wordpress
+    tag: 5.8.1-debian-10-r0
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: "alibabacloud-cnfs-nas"
+

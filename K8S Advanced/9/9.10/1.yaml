@@ -1,0 +1,466 @@
+## Promtail高级特性及场景案例
+
+```yaml
+# 配置Promtail服务器。
+[server: <server_config>]
+
+# 描述Promtail如何连接到多个Loki实例，并将日志发送到每个实例。
+# 警告：如果其中一个远程Loki服务器无法响应或响应任何可重试的错误，这将影响发送日志到任何其他配置的远程Loki服务器。发送操作在单个线程上执行！
+# 通常建议同时运行多个Promtail客户端，以并行发送到多个远程Loki实例。
+clients:
+  - [<client_config>]
+
+# 描述如何将读取的文件偏移保存到磁盘上。
+[positions: <position_config>]
+
+scrape_configs:
+  - [<scrape_config>]
+
+# 为此Promtail实例配置全局限制。
+[limits_config: <limits_config>]
+
+# 配置如何监视监控目标。
+[target_config: <target_config>]
+
+# Promtail的其他配置。
+[options: <options_config>]
+
+# 配置追踪支持
+[tracing: <tracing_config>]
+```
+
+#### 3.2、server配置
+
+以下是关于 `server`块配置的说明，用于配置Promtail作为HTTP服务器的行为：
+
+```yaml
+# 禁用 HTTP 和 GRPC 服务器。
+[disable: <boolean> | 默认值 = false]
+
+# 启用用于性能分析的 /debug/fgprof 和 /debug/pprof 端点。
+[profiling_enabled: <boolean> | 默认值 = false]
+
+# HTTP 服务器监听主机
+[http_listen_address: <string>]
+
+# HTTP 服务器监听端口（0 表示随机端口）
+[http_listen_port: <int> | 默认值 = 80]
+
+# gRPC 服务器监听主机
+[grpc_listen_address: <string>]
+
+# gRPC 服务器监听端口（0 表示随机端口）
+[grpc_listen_port: <int> | 默认值 = 9095]
+
+# 注册instrumentation处理程序（/metrics 等）
+[register_instrumentation: <boolean> | 默认值 = true]
+
+# 优雅关闭的超时时间
+[graceful_shutdown_timeout: <duration> | 默认值 = 30s]
+
+# HTTP 服务器读取超时时间
+[http_server_read_timeout: <duration> | 默认值 = 30s]
+
+# HTTP 服务器写入超时时间
+[http_server_write_timeout: <duration> | 默认值 = 30s]
+
+# HTTP 服务器空闲超时时间
+[http_server_idle_timeout: <duration> | 默认值 = 120s]
+
+# 可接收的最大 gRPC 消息大小
+[grpc_server_max_recv_msg_size: <int> | 默认值 = 4194304]
+
+# 可发送的最大 gRPC 消息大小
+[grpc_server_max_send_msg_size: <int> | 默认值 = 4194304]
+
+# gRPC 调用的并发流的限制数量（0 表示无限制）
+[grpc_server_max_concurrent_streams: <int> | 默认值 = 100]
+
+# 仅记录给定严重性或更高严重性的消息。支持的值 [debug, info, warn, error]
+[log_level: <string> | 默认值 = "info"]
+
+# 所有API路由的基本路径（例如，/v1/）。
+[http_path_prefix: <string>]
+
+# Promtail就绪状态的目标管理器检查标志，如果设置为 false，则忽略检查
+[health_check_target: <bool> | 默认值 = true]
+
+# 通过HTTP请求启用运行时重新加载。
+[enable_runtime_reload: <bool> | 默认值 = false]
+```
+
+#### 3.3、clients配置
+
+`clients` 块配置了`Promtail` 如何连接到 `Loki` 的实例：
+
+```yaml
+# Loki监听的URL，在Loki中表示为http_listen_address和http_listen_port。
+# 如果Loki运行在微服务模式下，这是Distributor的HTTP URL。
+# 需要包含推送API的路径。
+# 示例：http://example.com:3100/loki/api/v1/push
+url: <string>
+
+# 每个推送请求发送时要附带的自定义HTTP标头。
+# 请注意，Promtail本身设置的标头（如 X-Scope-OrgID）无法被覆盖。
+headers:
+  # 示例：CF-Access-Client-Id: xxx
+  [ <labelname>: <labelvalue> ... ]
+
+# 用于默认推送日志到Loki的租户ID。
+# 如果省略或为空，则假定Loki运行在单租户模式下，不会发送X-Scope-OrgID标头。
+[tenant_id: <string>]
+
+# 发送批次之前等待的最大时间，即使批次不满也会发送。
+[batchwait: <duration> | 默认值 = 1s]
+
+# 积累日志的最大批次大小（以字节为单位），在发送给Loki之前。
+[batchsize: <int> | 默认值 = 1048576]
+
+# 如果使用基本身份验证，配置要发送的用户名和密码。
+basic_auth:
+  # 用于基本身份验证的用户名
+  [username: <string>]
+
+  # 用于基本身份验证的密码
+  [password: <string>]
+
+  # 包含基本身份验证密码的文件
+  [password_file: <filename>]
+
+# 可选的 OAuth 2.0 配置
+# 不能与 basic_auth 或 authorization 同时使用
+oauth2:
+  # OAuth2的客户端ID和密钥
+  [client_id: <string>]
+  [client_secret: <secret>]
+
+  # 从文件中读取客户端密钥
+  # 与`client_secret`互斥
+  [client_secret_file: <filename>]
+
+  # 用于令牌请求的可选范围
+  scopes:
+    [ - <string> ... ]
+
+  # 用于获取令牌的URL
+  token_url: <string>
+
+  # 追加到令牌URL的可选参数
+  endpoint_params:
+    [ <string>: <string> ... ]
+
+# 发送到服务器的Bearer令牌。
+[bearer_token: <secret>]
+
+# 包含要发送到服务器的Bearer令牌的文件。
+[bearer_token_file: <filename>]
+
+# 用于连接服务器的HTTP代理服务器。
+[proxy_url: <string>]
+
+# 如果连接到TLS服务器，配置TLS验证握手的操作方式。
+tls_config:
+  # 用于验证服务器的CA文件
+  [ca_file: <string>]
+
+  # 发送到服务器用于客户端身份验证的证书文件
+  [cert_file: <filename>]
+
+  # 发送到服务器用于客户端身份验证的密钥文件
+ 
+  [key_file: <filename>]
+
+  # 验证服务器证书中的服务器名称是否与此值匹配。
+  [server_name: <string>]
+
+  # 如果为true，则忽略服务器证书由未知CA签名的情况。
+  [insecure_skip_verify: <boolean> | 默认值 = false]
+
+# 配置请求失败时如何重试向Loki发送请求。
+# 默认的退避(backoff)时间表：
+# 0.5s、1s、2s、4s、8s、16s、32s、64s、128s、256s（4.267m）
+# 共计 511.5s（8.5m）的时间，超过该时间将丢失日志。
+backoff_config:
+  # 重试之间的初始退避时间
+  [min_period: <duration> | 默认值 = 500ms]
+
+  # 重试之间的最大退避时间
+  [max_period: <duration> | 默认值 = 5m]
+
+  # 最大重试次数
+  [max_retries: <int> | 默认值 = 10]
+
+# 禁用对Loki响应状态码为429（TooManyRequests）的批次的重试。
+# 这减少了来自其他租户的批次的影响，因为由于指数退避可能会导致这些批次被延迟或丢失。
+[drop_rate_limited_batches: <boolean> | 默认值 = false]
+
+# 添加到发送到Loki的所有日志的静态标签。
+# 使用类似 {"foo": "bar"} 的映射添加标签foo和值bar。
+# 这些也可以从命令行指定：
+# -client.external-labels=k1=v1,k2=v2
+# （或 --client.external-labels，取决于您的操作系统）
+# 命令行提供的标签将应用于 `clients` 部分中配置的所有客户端。
+# 注意：配置文件中定义的值将替换命令行中针对给定客户端相同标签键的值。
+external_labels:
+  [ <labelname>: <labelvalue> ... ]
+
+# 等待服务器响应请求的最大时间。
+[timeout: <duration> | 默认值 = 10s]
+```
+
+#### 3.4、positions配置
+
+`positions` 配置了Promtail将保存一个文件，指示它已经读取到文件的哪个位置。这在Promtail重新启动时是必需的，以便它可以从上次离开的位置继续读取。
+
+```yaml
+# 位置文件的路径
+[filename: <string> | default = "/var/log/positions.yaml"]
+
+# 更新位置文件的频率
+[sync_period: <duration> | default = 10s]
+
+# 是否忽略并在后续覆盖损坏的位置文件
+[ignore_invalid_yaml: <boolean> | default = false]
+```
+
+#### 3.5、scrape_configs配置
+
+`scrape_configs`块配置了 Promtail 如何使用指定的发现方法从一系列目标(targets)中抓取日志：
+
+```yaml
+# 在Promtail UI中用于标识此抓取配置的名称。
+job_name: <string>
+
+# 描述如何转换来自目标的日志。
+[pipeline_stages: <pipeline_stages>]
+
+# 定义给定抓取目标的解压行为。
+decompression:
+  # 是否尝试解压缩。
+  [enabled: <boolean> | default = false]
+
+  # 开始解压缩前等待的初始延迟时间。
+  # 在发现压缩文件在压缩完成之前就存在的情况下非常有用。
+  [initial_delay: <duration> | default = 0s]
+
+  # 压缩格式。支持的格式有：'gz'、'bz2' 和 'z'。
+  [format: <string> | default = ""]
+
+# 描述如何从journal日志记录中抓取日志。
+[journal: <journal_config>]
+
+# 描述要将抓取的文件从哪种编码转换为。
+[encoding: <iana_encoding_name>]
+
+# 描述如何从syslog接收日志。
+[syslog: <syslog_config>]
+
+# 描述如何通过Loki推送API接收日志，（例如从其他Promtails或Docker Logging Driver）。
+[loki_push_api: <loki_push_api_config>]
+
+# 描述如何从Windows事件日志抓取日志。
+[windows_events: <windows_events_config>]
+
+# 描述如何拉取/接收Google Cloud Platform (GCP)日志。
+[gcplog: <gcplog_config>]
+
+# 描述如何通过Consumer组从Kafka抓取日志。
+[kafka: <kafka_config>]
+
+# 描述如何从gelf客户端接收日志。
+[gelf: <gelf_config>]
+
+# 描述如何拉取Cloudflare的日志。
+[cloudflare: <cloudflare>]
+
+# 描述如何拉取来自Heroku LogPlex drain的日志。
+[heroku_drain: <heroku_drain>]
+
+# 描述如何重新标记目标以确定是否应处理它们。
+relabel_configs:
+  - [<relabel_config>]
+
+# 静态目标进行抓取。
+static_configs:
+  - [<static_config>]
+
+# 包含要抓取的目标的文件。
+file_sd_configs:
+  - [<file_sd_configs>]
+
+# 描述如何发现运行在相同主机上的Kubernetes服务。
+kubernetes_sd_configs:
+  - [<kubernetes_sd_config>]
+
+# 描述如何使用Consul Catalog API 发现在consul集群中注册的服务。
+consul_sd_configs:
+  [ - <consul_sd_config> ... ]
+
+# 描述如何使用Consul Agent API 发现与Promtail在同一主机上运行的consul agent注册的服务。
+consulagent_sd_configs:
+  [ - <consulagent_sd_config> ... ]
+
+# 描述如何使用Docker 守护程序API发现在与Promtail相同的主机上运行的容器。
+docker_sd_configs:
+  [ - <docker_sd_config> ... ]
+```
+
+### 四、Promtail场景案例
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/log/positions.yaml # Promtail需要有对此位置的写入权限。
+
+clients:
+  - url: http://ip_or_hostname_where_Loki_run:3100/loki/api/v1/push
+
+scrape_configs:
+ - job_name: system
+   pipeline_stages:
+   static_configs:
+   - targets:
+      - localhost
+     labels:
+      job: varlogs  # `job`标签在Prometheus中非常常见，对于关联指标(metrics)和日志非常有用。
+      host: yourhost # `host`标签将有助于区分来自此机器和其他机器的日志
+      __path__: /var/log/*.log  # 路径匹配使用第三方库: https://github.com/bmatcuk/doublestar
+```
+
+
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/log/positions.yaml # 此位置需要可被 Promtail 写入。
+
+clients:
+  - url: http://ip_or_hostname_where_Loki_run:3100/loki/api/v1/push
+
+scrape_configs:
+ - job_name: system
+   pipeline_stages:
+   static_configs:
+   - labels:
+      job: varlogs  # 在 Prometheus 中，`job` 标签是相当标准的，对于关联指标(metrics)和日志非常有用。
+      host: yourhost # `host` 标签将有助于识别来自本机的日志与其他机器的日志。
+      __path__: /var/log/*.log  # 路径匹配使用了第三方库：https://github.com/bmatcuk/doublestar
+```
+
+#### 4.3、Journal-systemd配置
+
+这个例子从systemd日志中读取条目：
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://ip_or_hostname_where_loki_runs:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: journal
+    journal:
+      max_age: 12h
+      labels:
+        job: systemd-journal
+    relabel_configs:
+      - source_labels: ['__journal__systemd_unit']
+        target_label: 'unit'
+```
+
+#### 4.4、Journal-syslog配置
+
+这个例子将Promtail启动为一个syslog接收器，并可以通过TCP接收Promtail中的syslog条目：
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki_addr:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: syslog
+    syslog:
+      listen_address: 0.0.0.0:1514
+      labels:
+        job: "syslog"
+    relabel_configs:
+      - source_labels: ['__syslog_message_hostname']
+        target_label: 'host'
+```
+
+#### 4.5、Push Config
+
+这个例子将Promtail启动为一个Push接收器，并可以接收来自其他Promtail实例或Docker Logging Driver的日志：
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://ip_or_hostname_where_Loki_run:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: push1
+  loki_push_api:
+    server:
+      http_listen_port: 3500
+      grpc_listen_port: 3600
+    labels:
+      pushserver: push1
+```
+
+
+#### 4.6、支持获取压缩文件
+
+
+```yaml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://localhost:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: system
+  decompression:
+    enabled: true
+    initial_sleep: 10s
+    format: gz
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: varlogs
+      __path__: /var/log/**.gz
+```
+
+在上面的配置中，我们使用了`decompress`来配置解压缩。
+
+- `__path__`标签指定了压缩文件的路径，
+- `regex`用于匹配压缩文件的正则表达式。
+- 在解压缩阶段后，可以进一步添加其他的pipeline stages进行数据处理和标签添加。

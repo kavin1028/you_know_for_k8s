@@ -1,0 +1,503 @@
+1、quote and squote
+
+该函数将值转 **换成字符串** 用 **双引号(`quote`)** 或者 **单引号(`squote`)** 括起来。示例如下：
+
+```yaml
+./values.yaml
+name: soulchild
+favorite:
+  drink: coffee
+  food: pizza
+
+./configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  drink: {{ .Values.favorite.drink | quote }}
+  food: {{ .Values.favorite.food | upper | squote }}
+```
+
+2、default
+
+这个函数允许你在模板中指定一个默认值，以防这个值被忽略。
+
+```yaml
+# 如果.Values.favorite.drink是非空值，则使用它，否则会返回tea。
+drink: {{ .Values.favorite.drink | default "tea" | quote }}
+```
+
+3、`indent`和`nindent`
+
+`indent` / `nindent`  都是缩进字符串，主要区别在于nindent会在缩进前多添加一个换行符
+
+```yaml
+{{ .Values.resources.memory.limits | indent 4 }}
+上述结果会在当前位置开始缩进4个空格。
+{{ .Values.resources.memory.limits | nindent 4 }}
+上述结果会在换行后的开头位置开始缩进4个空格。
+```
+
+4、date
+
+date函数格式化日期，日期格式化为YEAR-MONTH-DAY：
+
+```bash
+now | date "2006-01-02"
+```
+
+5、lower
+
+将整个字符串转换成小写：
+
+```bash
+lower "HELLO"
+结果为： hello
+```
+
+6、upper
+
+将整个字符串转换成大写：
+
+```bash
+upper "hello"
+结果为： HELLO
+```
+
+7、title
+
+首字母转换成大写：
+
+```bash
+title "hello world"
+结果为： Hello World
+```
+
+8、toYaml
+
+引用一块YAML内容
+
+在values.yaml里写结构化数据，引用内容块
+
+在values增加resources资源配额。
+
+```yaml
+./values.yaml
+name: soulchild
+favorite:
+  drink: coffee
+  food: pizza
+resources:
+  limits:
+    cpu: 200m
+    memory: 500m
+  requests:
+    cpu: 200m
+    memory: 500m
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  drink: {{ .Values.favorite.drink | quote }}
+  food: {{ .Values.favorite.food | upper | squote }}
+  resources: {{ toYaml .Values.resources | nindent 4 }}
+```
+
+#### 2.3、条件语句
+
+**运算符：**
+
+```bash
+eq: 等于（equal to）
+ne: 不等于（not equal to）
+lt: 小于（less than）
+le: 小于等于（less than or equal to）
+gt: 大于（greater than）
+ge: 大于等于（greater than or equal to）
+```
+
+**if/else 用法：**
+
+```bash
+{{ if PIPELINE }}
+  # Do something
+{{ else if OTHER PIPELINE }}
+  # Do something else
+{{ else }}
+  # Default case
+{{ end }}
+```
+
+当返回值是以下值时，管道会被设置为 false：
+
+```bash
+布尔false
+数字0
+空字符串
+nil (空或null)
+空集合(map, slice, tuple, dict, array)
+```
+
+【示例】：要求.Values.favorite.drink的值等于coffee，则输出mug: true
+
+```yaml
+./values.yaml
+name: soulchild
+favorite:
+  drink: coffee
+  food: pizza
+
+./configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  drink: {{ .Values.favorite.drink | default "tea" | quote }}
+  food: {{ .Values.favorite.food | upper | quote }}
+  {{ if and .Values.favorite.drink (eq .Values.favorite.drink "coffee") }}mug: true{{ end }}
+```
+
+**注意**：`空白行`
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  drink: {{ .Values.favorite.drink | default "tea" | quote }}
+  food: {{ .Values.favorite.food | upper | quote }}
+  {{if eq .Values.favorite.drink "coffee"}}
+  mug: true
+  {{end}}
+```
+
+当模板引擎运行时，它会删除`{{`和`}}`中的内容，但保留其余空白。通过新增{- if ...}} 的方式消除此空行，修改后：
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  drink: {{ .Values.favorite.drink | default "tea" | quote }}
+  food: {{ .Values.favorite.food | upper | quote }}
+  {{- if eq .Values.favorite.drink "coffee"}}
+  mug: true
+  {{- end}}
+```
+
+谨慎使用：如：`-}}`
+
+这将会把如上的结果生成在同一行 `food: "PIZZA"mug:true`，因为它消除了两边的换行。
+
+#### 2.4、变更作用域 with
+
+这个用来 **控制变量范围**。
+
+**with** 的语法与 **if** 语句类似：
+
+```yaml
+{{ with PIPELINE }}
+  # restricted scope
+{{ end }}
+```
+
+作用域可以被改变。with允许你为特定对象设定当前作用域(`.`)。比如，我们已经在使用.Values.favorite。 修改配置映射中的.的作用域指向.Values.favorite：
+
+```yaml
+./values.yaml
+name: soulchild
+favorite:
+  drink: coffee
+  food: pizza
+
+./configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  {{- with .Values.favorite }}
+  drink: {{ .drink | default "tea" | quote }}
+  food: {{ .food | upper | quote }}
+  {{- end }}
+```
+
+但是这里有个注意事项，在限定的作用域内，**无法使用.访问父作用域**的对象。错误示例如下：
+
+```yaml
+{{- with .Values.favorite }}
+drink: {{ .drink | default "tea" | quote }}
+food: {{ .food | upper | quote }}
+release: {{ .Release.Name }}            //release不在作用域内
+{{- end }}
+```
+
+这样会报错因为`Release.Name`**不在`.`限定的作用域内**。但是如果对调最后两行就是正常的， 因为在{{ end }}之后作用域被重置了。
+
+```yaml
+{{- with .Values.favorite }}
+drink: {{ .drink | default "tea" | quote }}
+food: {{ .food | upper | quote }}
+{{- end }}
+release: {{ .Release.Name }}            //脱离作用域，可以获取到Release.Name
+```
+
+或者，我们可以使用`$`**从父作用域中访问Release.Name对象**。当模板开始执行后`$`会被映射到**根作用域**，且执行过程中不会更改。 
+
+下面这种方式也可以正常工作：
+
+```yaml
+{{- with .Values.favorite }}
+drink: {{ .drink | default "tea" | quote }}
+food: {{ .food | upper | quote }}
+release: {{ $.Release.Name }}           //$类似全局参数
+{{- end }}
+```
+
+#### 2.5、rang循环语句
+
+在一个集合中迭代的方式是使用`range`操作符。
+
+```yaml
+./values.yaml
+favorite:
+  drink: coffee
+  food: pizza
+pizzaTypes:
+  - mushrooms
+  - cheese
+  - peppers
+  - onions
+```
+
+现在我们有了一个pizzaTypes列表（模板中称为切片）。修改模板把这个列表打印到配置映射中：
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+data:
+  myvalue: "Hello World"
+  {{- with .Values.favorite }}
+  drink: {{ .drink | default "tea" | quote }}
+  food: {{ .food | upper | quote }}
+  {{- end }}
+  toppings: |-
+    {{- range .Values.pizzaTypes }}
+    - {{ . | title | quote }}
+    {{- end }}    
+```
+
+该range函数将遍历pizzaTypes列表。每次通过循环，.的值都会发生改变，即 第一次.为mushrooms。将第二个迭代为cheese，依此类推。第二步继续使用后续title及quote函数：
+
+```yaml
+# Source: mychart/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: drinking-configmap
+data:
+  myvalue: "Hello World"
+  drink: "coffee"
+  food: "PIZZA"
+  toppings: |-
+    - "Mushrooms"
+    - "Cheese"
+    - "Peppers"
+    - "Onions"
+```
+
+**注意：**YAML中的`|-` 标记意为采用多行字符串。这对于在清单中嵌入大数据块是一种有用的技术，如例子中所示。
+
+有时，在模板中快速创建一个列表，然后遍历该列表是很有用的。Helm模板有一个名为`list`的函数。
+
+```yaml
+  sizes: |-
+    {{- range list "small" "medium" "large" }}
+    - {{ . }}
+    {{- end }}
+```
+
+ 结果：
+
+```yaml
+  sizes: |-
+    - small
+    - medium
+    - large
+```
+
+#### 2.6、命名模板
+
+**命名模板类似于开发语言中的函数，指一段可以直接被另一段程序或代码引用的程序或代码。**
+
+在编写chart时，可以将一些重复使用的内容写在命名模板文件中供公共使用，这样可减少重 复编写程序段和简化代码结构。
+
+命名模块使用define定义，template（不支持管道）或 include 引入，在templates目录中默 认下划线开头的文件为公共模板（_helpers.tpl）。
+
+```yaml
+# cat templates/_helpers.tpl
+{{- define "fullname" -}}
+{{- .Chart.Name -}}-{{ .Release.Name }}
+{{- end -}}
+ 
+# cat templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ .Release.Name |indent 6}}
+    app: {{ .Release.Name |nindent 6}}
+  name: {{ include "fullname" . }}
+```
+
+**1、用define和template声明和使用模板**
+
+define操作允许我们在模板文件中创建一个命名模板，**语法格式** 如下：
+
+```yaml
+{{- define "MY.NAME" }}
+  # body of template here
+{{- end }}
+```
+
+比如我们可以定义一个模板用来封装控制器的标签：
+
+```yaml
+{{- define "mychart.labels" }}
+  labels:
+    generator: helm
+    date: {{ now | htmlDate }}
+{{- end }}
+```
+
+现在我们将模板嵌入到了已有的配置映射中，然后使用`template`包含进来：
+
+```yaml
+{{- define "mychart.labels" }}
+  labels:
+    generator: helm
+    date: {{ now | htmlDate }}          //用于将日期格式化为 HTML 可接受的格式。  
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-configmap
+  {{- template "mychart.labels" }}
+data:
+  myvalue: "Hello World"
+  {{- range $key, $val := .Values.favorite }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+```
+
+当模板引擎读取该文件时，它会存储mychart.labels的引用直到template "mychart.labels"被调用。 然后会按行渲染模板，因此结果类似这样：
+
+```yaml
+# Source: mychart/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myfirsthelm-configmap
+  labels:
+    generator: helm
+    date: 2023-03-25
+data:
+  myvalue: "Hello World"
+  drink: "coffee"
+  food: "pizza"
+```
+
+> 注意：define不会有输出，除非像本示例一样用模板调用它。
+
+按照惯例，Helm chart将这些模板放置在局部文件中，一般是`_helpers.tpl`。
+
+```yaml
+{{/* Generate basic labels */}}
+{{- define "mychart.labels" }}
+  labels:
+    generator: helm
+    date: {{ now | htmlDate }}
+{{- end }}
+```
+
+**2、include 方法**
+
+以下是 include 指令的语法：
+
+```yaml
+{{- include "path/to/template" . }}
+```
+
+其中，第一个参数是要包含的子模板的路径（可以是相对路径或绝对路径）。第二个参数是当前上下文中可用的数据。   
+
+注意，当引用相对路径时，Helm 会在指定路径中寻找一个名为  `_helpers.tpl`  的文件，并将其视为项的一部分，以便在包含的模板中使用。   
+
+以下是一个具体的示例，其中  `{{- include "configmap.tpl" . }}`  指令包含了  `templates/configmap.tpl`  文件中的模板：
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMapName }}
+data:
+  {{- include "configmap.tpl" . }}
+```
+
+> `include` 相较于使用template，在helm中**使用include被认为是更好的方式** 只是为了更好地处理YAML文档的输出格式。
+
+#### 2.7、NOTES.txt文件
+
+> 在helm install 或 helm upgrade命令的最后，**Helm会打印出对用户有用的信息**。 使用模板可以高度自定义这部分信息。
+
+要在chart添加安装说明，只需创建`templates/NOTES.txt`文件即可。**该文件是纯文本，但会像模板一样处理**， 所有正常的模板函数和对象都是可用的。让我们创建一个简单的NOTES.txt文件：
+
+```bash
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+```
+
+执行 `helm install myfirsthelm ./mychart` 会在底部看到：
+
+```bash
+RESOURCES:
+==> v1/Secret
+NAME                   TYPE      DATA      AGE
+myfirsthelm-secret   Opaque    1         0s
+
+==> v1/ConfigMap
+NAME                      DATA      AGE
+myfirsthelm-configmap   3         0s
+
+
+NOTES:
+Thank you for installing mychart.
+
+Your release is named myfirsthelm.
+
+To learn more about the release, try:
+
+  $ helm status myfirsthelm
+  $ helm get all myfirsthelm
+```
+
+使用NOTES.txt这种方式是给用户提供关于如何使用新安装的chart细节信息的好方法。尽管并不是必需的，**强烈建议创建一个`NOTES.txt`文件**。

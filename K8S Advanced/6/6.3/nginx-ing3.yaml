@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: new-nginx-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      if ($http_name ~ "^.*foo$|^.*new$") {
+         proxy_pass http://new-nginx.default:80;
+         break;
+      }
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nginx.kubernets.cn
+      http:
+        paths:
+        - path: /
+          backend:
+            service:
+              name: old-nginx
+              port:
+                number: 80
+          pathType: Prefix
+        - path: /
+          backend:
+            service:
+              name: new-nginx
+              port:
+                number: 80
+          pathType: Prefix

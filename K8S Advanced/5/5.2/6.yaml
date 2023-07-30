@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vue
+  template:
+    metadata:
+      labels:
+        app: vue
+    spec:
+      containers:
+      - name: vue
+        image: harbor-local.kubernets.cn/demo/vue:v2            //改为自己仓库中的镜像
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "128Mi"
+            cpu: "100m" 
+        ports:
+          - containerPort: 80
+            name: web
+        livenessProbe:
+          httpGet:
+            port: web
+            path: /
+        readinessProbe:
+          tcpSocket:
+            port: web
+        volumeMounts:
+          - mountPath: /etc/nginx/conf.d/default.conf
+            subPath: default.conf
+            name: nginx-config
+          - mountPath: /media
+            name: media
+      volumes:
+        - name:  nginx-config  # 使用生产模式nginx配置文件
+          configMap:
+            name:  vue
+        - name: media          # 挂载空目录，用于存放远端资源
+          emptyDir: {}

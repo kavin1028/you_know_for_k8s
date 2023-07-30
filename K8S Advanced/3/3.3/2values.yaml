@@ -1,0 +1,31 @@
+global:
+  imagePullSecrets: []
+  storageClass: "alibabacloud-cnfs-nas"
+
+wordpressPassword: "wppwd"
+wordpressUsername: wpuser
+wordpressBlogName: ZHDYA's Blog!
+wordpressScheme: http
+wordpressSkipInstall: true
+
+replicaCount: 1
+
+updateStrategy:
+  type: RollingUpdate
+
+hostAliases:
+
+initContainers: []
+
+pod/node亲和相关：
+
+resources:
+
+livenessProbe:
+readinessProbe:
+startupProbe:
+
+service:
+
+ingress:
+...

@@ -1,0 +1,23 @@
+# values.yaml
+fullnameOverride: logstash
+
+persistence:
+  enabled: true
+
+logstashConfig:
+  logstash.yml: |
+    http.host: 0.0.0.0
+
+# 要注意下格式
+logstashPipeline:
+  logstash.conf: |
+    input { kafka { bootstrap_servers => "kafka-0.kafka-headless.logging.svc.cluster.local:9092" codec => json consumer_threads => 3 topics => ["messages"] } }
+    filter {}  # 过滤配置（比如可以删除key、添加geoip等等）
+    output { elasticsearch { hosts => [ "elasticsearch-master:9200" ] index => "logstash-k8s-%{+YYYY.MM.dd}" } stdout { codec => rubydebug } }
+
+volumeClaimTemplate:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: nfs-storage
+  resources:
+    requests:
+      storage: 30Gi

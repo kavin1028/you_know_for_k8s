@@ -1,0 +1,81 @@
+(1)、将明文密码进行base64编码
+
+```bash
+# echo -n hellomysql |base64
+aGVsbG9teXNxbA==
+```
+
+(2)、编写创建secret的YAML文件
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+ name: secret-mysql
+data:
+ password: aGVsbG9teXNxbA==
+```
+
+(3)、创建secret并确认
+
+```bash
+# kubectl apply -f secret-mysql.yaml
+# kubectl get secret |grep secret-mysql
+```
+
+Secret的2种使用方式：
+
+**（1）通过ENV变量的方式**
+
+创建mysql的pod示例，引用来自如上的 `secret-mysql`
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-mysql-secret
+spec:
+  containers:
+  - name: mysql
+    image: mysql:5.7
+    env:
+      - name: MYSQL_ROOT_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: secret-mysql                          # 对应创建的secret名字
+            key: password
+```
+
+验证变量效果：
+
+```bash
+kubectl exec -it pod-mysql-secret /bin/bash
+root@pod-mysql-secret1:/# env |grep MYSQL_ROOT_PASSWORD
+```
+
+**（2）通过volume的方式挂载**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-mysql-secret2
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    args:
+    - /bin/sh
+    - -c
+    - sleep 100000
+    volumeMounts:
+    - name: vol-secret                  # 定义挂载的卷,对应下面定义的卷名
+      mountPath: "/opt/passwd"    # 挂载目录(支持热更新),也可以使用subPath挂载文件(但不支持热更新)
+      readOnly: true                    # 只读
+  volumes:
+  - name: vol-secret                    # 定义卷名
+    secret:                             # 使用secret
+      secretName: secret-mysql              # 对应创建好的secret名
+```
+
+

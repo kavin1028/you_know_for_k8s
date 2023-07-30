@@ -1,0 +1,45 @@
+## 设置集群名称
+clusterName: "elasticsearch"
+## 设置节点名称
+nodeGroup: "master"
+
+## 设置角色
+roles:
+  master: "true"
+  ingest: "true"
+  data: "true"
+  remote_cluster_client: "true"
+  ml: "true"
+
+
+# ============镜像配置============
+## 指定镜像与镜像版本
+image: "elasticsearch"
+imageTag: "7.17.3"
+imagePullPolicy: "IfNotPresent"
+
+## 副本数
+replicas: 3
+minimumMasterNodes: 2
+
+# ============资源配置============
+## JVM 配置参数
+esJavaOpts: "-Xmx1g -Xms1g"
+## 部署资源配置(生成环境要设置大些)
+resources:
+  requests:
+    cpu: "2000m"
+    memory: "2Gi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+## 数据持久卷配置
+persistence:
+  enabled: true
+## 存储数据大小配置
+volumeClaimTemplate:
+  storageClassName: nfs-storage
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 30Gi

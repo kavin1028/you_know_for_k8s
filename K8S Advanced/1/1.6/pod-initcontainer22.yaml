@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: my-app
+  name: my-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      run: my-app
+  template:
+    metadata:
+      labels:
+        run: my-app
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: myapp-container
+        image: busybox:1.28
+        command: ['sh', '-c', 'echo The app is running! && sleep 3600']
+      initContainers:
+      - name: init-myappb
+        image: busybox:1.28
+        command: ['sh', '-c', "until nslookup myappb.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local; do echo waiting for myappb; sleep 2; done"]

@@ -1,0 +1,14 @@
+# 删除无用的属性
+<filter kubernetes.**>
+  @type record_transformer
+  remove_keys $.docker.container_id,$.kubernetes.container_image_id,$.kubernetes.pod_id,$.kubernetes.namespace_id,$.kubernetes.master_url,$.kubernetes.labels.pod-template-hash
+</filter>
+# 只保留具有logging=true标签的Pod日志
+<filter kubernetes.**>
+  @id filter_log
+  @type grep
+  <regexp>
+    key $.kubernetes.labels.logging
+    pattern ^true$
+  </regexp>
+</filter>

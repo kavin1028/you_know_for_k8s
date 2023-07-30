@@ -1,0 +1,55 @@
+# enable prometheus alerting for cluster
+  monitoring:
+# requires Prometheus to be pre-installed
+    enabled: false      #如果集群中没有安装prometheus的小伙伴不要开启！！
+# To control where various services will be scheduled by kubernetes, use the placement configuration sections below.
+# The example under 'all' would have all services scheduled on kubernetes nodes labeled with 'role=storage-node' and
+# tolerate taints with a key of 'storage-node'.
+  placement:
+    all:
+      nodeAffinity: #打开节点亲和性调度和污点容忍
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: role
+              operator: In
+              values:
+              - storage-node
+     # podAffinity:
+     # podAntiAffinity:
+     # topologySpreadConstraints:
+     # tolerations:
+     # - key: storage-node
+     #   operator: Exists
+  storage: # cluster level storage configuration and selection
+    useAllNodes: false
+    useAllDevices: false
+    #deviceFilter:
+    config:
+      # crushRoot: "custom-root" # specify a non-default root label for the CRUSH map
+      # metadataDevice: "md0" # specify a non-rotational storage so ceph-volume will use it as block db device of bluestore.
+      # databaseSizeMB: "1024" # uncomment if the disks are smaller than 100 GB
+      # journalSizeMB: "1024"  # uncomment if the disks are 20 GB or smaller
+      # osdsPerDevice: "1" # this value can be overridden at the node or device level
+      # encryptedDevice: "true" # the default value for this option is "false"
+# Individual nodes and their config can be specified as well, but 'useAllNodes' above must be set to false. Then, only the named
+# nodes below will be used as storage resources.  Each node's 'name' field should match their 'kubernetes.io/hostname' label.
+    nodes:
+    - name: "node1"             #注意，name 不能够配置为IP，而应该是标签 kubernetes.io/hostname 的内容
+      devices: # specific devices to use for storage can be specified for each node
+      - name: "sdb"             #将存储设置为我们三个工作节点新加的sdb裸盘，可以通过lsblk查看磁盘信息
+    - name: "node2"
+      devices: # specific devices to use for storage can be specified for each node
+      - name: "sdb"
+    - name: "node3"
+      devices: # specific devices to use for storage can be specified for each node
+      - name: "sdb"
+    #       - name: "nvme01" # multiple osds can be created on high performance devices
+    #         config:
+    #           osdsPerDevice: "5"
+    #       - name: "/dev/disk/by-id/ata-ST4000DM004-XXXX" # devices can be specified using full udev paths
+    #     config: # configuration can be specified at the node level which overrides the cluster level config
+    #   - name: "172.17.4.301"
+    #     deviceFilter: "^sd."
+    # when onlyApplyOSDPlacement is false, will merge both placement.All() and placement.osd
+    onlyApplyOSDPlacement: false

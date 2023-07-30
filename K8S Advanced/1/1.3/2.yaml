@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: affinity
+  labels:
+    app: affinity
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: affinity
+  template:
+    metadata:
+      labels:
+        app: affinity
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
+          name: nginxweb
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:  # 硬策略
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - cn-shanghai.172.25.36.200
+          preferredDuringSchedulingIgnoredDuringExecution:  # 软策略
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: apptype
+                operator: In
+                values:
+                - core

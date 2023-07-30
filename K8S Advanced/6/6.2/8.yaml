@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: java-ingress-nginx
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/server-snippet: |-
+        set $agentflag 0;
+
+        if ($http_user_agent ~* "(iPhone|iPod|android)" ){
+          set $agentflag 1;
+        }
+
+        if ( $agentflag = 1 ) {
+          return 301 https://m.baidu.com;
+        }
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: java.kubernets.cn
+      http:
+        paths:
+          - pathType: Prefix
+            backend:
+              service:
+                name: springboot
+                port:
+                  number: 8080
+            path: /

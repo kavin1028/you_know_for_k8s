@@ -1,0 +1,13 @@
+node {
+        def mvnHome
+        stage('pull code'){
+          echo "pull code"
+        }
+        
+        stage('build project'){
+          echo "build project"
+        }
+        stage('pull code'){
+          echo "pull code"
+        }
+}

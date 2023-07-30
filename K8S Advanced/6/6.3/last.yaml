@@ -1,0 +1,148 @@
+#### 4.2、案例
+
+创建老服务的：Deployment、Service。
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: old-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      run: old-nginx
+  template:
+    metadata:
+      labels:
+        run: old-nginx
+    spec:
+      containers:
+      - image: registry.cn-hangzhou.aliyuncs.com/acs-sample/old-nginx
+        imagePullPolicy: Always
+        name: old-nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: old-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    run: old-nginx
+  sessionAffinity: None
+  type: ClusterIP
+```
+
+Ingress资源创建：
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gray-release
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nginx.kubernets.cn
+      http:
+        paths:
+          - pathType: Prefix
+            backend:
+              service:
+                name: old-nginx
+                port:
+                  number: 80
+            path: /
+```
+
+**灰度发布新版本服务**
+
+发布一个新版本的Nginx服务并配置路由规则。
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: new-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: new-nginx
+  template:
+    metadata:
+      labels:
+        run: new-nginx
+    spec:
+      containers:
+      - image: registry.cn-hangzhou.aliyuncs.com/acs-sample/new-nginx
+        imagePullPolicy: Always
+        name: new-nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: new-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    run: new-nginx
+  sessionAffinity: None
+  type: ClusterIP
+```
+
+设置满足特定规则的客户端才能访问新版本服务。以下示例仅请求头中满足`foo=bar`的客户端请求才能路由到新版本服务。
+
+- 修改如上步骤创建的Ingress。
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gray-release
+  namespace: default
+  annotations:
+    # 请求头中满足正则匹配foo=bar的请求才会被路由到新版本服务new-nginx中。
+    nginx.ingress.kubernetes.io/service-match: | 
+      new-nginx: header("foo", /^bar$/)
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nginx.kubernets.cn
+      http:
+        paths:
+        # 老版本服务
+        - path: /
+          backend:
+            service:
+              name: old-nginx
+              port:
+                number: 80
+          pathType: ImplementationSpecific
+        # 新版本服务
+        - path: /
+          backend:
+            service:
+              name: new-nginx
+              port:
+                number: 80
+          pathType: ImplementationSpecific
+```
+
+

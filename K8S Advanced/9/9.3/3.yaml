@@ -1,0 +1,20 @@
+<source>
+  @id fluentd-containers.log
+  @type tail                             # Fluentd 内置的输入方式，其原理是不停地从源文件中获取新的日志。
+  path /var/log/containers/*.log         # 挂载的宿主机容器日志地址
+  pos_file /var/log/es-containers.log.pos
+  tag raw.kubernetes.*                   # 设置日志标签
+  read_from_head true
+  <parse>                                # 多行格式化成JSON
+    @type multi_format                   # 使用 multi-format-parser 解析器插件
+    <pattern>
+      format json                        # JSON 解析器
+      time_key time                      # 指定事件时间的时间字段
+      time_format %Y-%m-%dT%H:%M:%S.%NZ  # 时间格式
+    </pattern>
+    <pattern>
+      format /^(?<time>.+) (?<stream>stdout|stderr) [^ ]* (?<log>.*)$/
+      time_format %Y-%m-%dT%H:%M:%S.%N%:z
+    </pattern>
+  </parse>
+</source>
