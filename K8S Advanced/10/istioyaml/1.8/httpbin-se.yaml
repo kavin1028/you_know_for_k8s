@@ -1,0 +1,27 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: httpbin-ext
+spec:
+  hosts:
+  - httpbin.org
+  ports:
+  - number: 80                       # 访问http://httpbin.org
+    name: http
+    protocol: HTTP
+  resolution: DNS                     # 使用DNS解析
+  location: MESH_EXTERNAL
+---
+apiVersion: networking.istio.io/v1alpha3  
+kind: VirtualService
+metadata:
+  name: httpbin-ext
+spec:
+  hosts:
+    - httpbin.org
+  http:
+  - timeout: 3s     # 设置调用外部服务 httpbin.org 的超时时间为3秒，即我调用外部服务后，如果3秒内未返回结果，即认为超时
+    route:
+      - destination:
+          host: httpbin.org
+        weight: 100

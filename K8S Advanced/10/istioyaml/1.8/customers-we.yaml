@@ -1,0 +1,11 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: WorkloadEntry
+metadata:
+  name: details-vm-2
+spec:
+  address: 192.10.192.14 # 外部地址
+  ports:
+    number: 3000
+  labels:
+    app: details-legacy
+    instance-id: vm1

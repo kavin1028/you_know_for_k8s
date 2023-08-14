@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: tomcat-virtualservice
+  namespace: microservice
+spec:
+  hosts:
+    - "*"
+  #把VirtualService绑定到ingressgateway80这个网关
+  gateways:
+    - ingressgateway80
+  http:
+    - route:
+        #表示路由到tomcat这个service，microservice表示命名空间
+        - destination:
+            host: tomcat.microservice.svc.cluster.local
+            port:
+              number: 80
